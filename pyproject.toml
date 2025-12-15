@@ -15,7 +15,7 @@ dependencies = [
     "pyyaml",
     "tornado",
     "zarr>3,<4",
-    "zarr-tools @ git+https://github.com/JaneliaSciComp/zarr-tools.git@f5bb4c8",
+    "zarr-tools @ git+https://github.com/JaneliaSciComp/zarr-tools.git@16271a6",
 ]
 
 [tool.setuptools.packages.find]
