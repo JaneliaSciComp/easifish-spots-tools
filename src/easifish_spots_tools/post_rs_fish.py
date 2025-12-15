@@ -1,0 +1,110 @@
+import argparse
+import numpy as np
+import os
+
+from .cli import floattuple
+from .io_utils.imgio import open_image_array
+from zarr_tools.ngff.ngff_utils import get_spatial_voxel_spacing
+
+
+def _define_args():
+    args_parser = argparse.ArgumentParser()
+    args_parser.add_argument('-i', '--input',
+                             dest='input',
+                             type=str,
+                             required=True,
+                             help = "spots input file using voxel coordinates")
+
+    args_parser.add_argument('-o','--output',
+                             dest='output',
+                             type=str,
+                             required=True,
+                             help = "output file in real coordinates")
+
+    args_parser.add_argument('--image-container',
+                             dest='image_container',
+                             type=str,
+                             help = "image container")
+    args_parser.add_argument('--image-subpath', '--image-dataset',
+                             dest='image_dataset',
+                             type=str,
+                             help = "image subpath")
+
+    args_parser.add_argument('--voxel-spacing', '--voxel_spacing',
+                             dest='voxel_spacing',
+                             type=floattuple,
+                             help = "voxel spacing")
+    args_parser.add_argument('--expansion-factor', '--expansion_factor',
+                             dest='expansion_factor',
+                             type=float,
+                             default=0.,
+                             help='Sample expansion factor')
+
+    args_parser.add_argument('--ignore-voxel-spacing',
+                             dest='ignore_voxel_spacing',
+                             action='store_true',
+                             default=False,
+                             help='Do not apply voxel spacing')
+
+    return args_parser
+
+
+def _post_process_rsfish_csv_results(args):
+
+    if args.voxel_spacing:
+        voxel_spacing = args.voxel_spacing[::-1]
+    elif args.image_container:
+        _, image_attrs = open_image_array(args.image_container, args.image_dataset)
+        voxel_spacing = get_spatial_voxel_spacing(image_attrs)
+    else:
+        voxel_spacing = None
+
+    if voxel_spacing is not None:
+        if args.expansion_factor > 0:
+            voxel_spacing = [c / args.expansion_factor for c in voxel_spacing]
+    else:
+        voxel_spacing = (1,) * 3
+
+    print(f"Image voxel spacing: {voxel_spacing}")
+
+    rsfish_spots = np.loadtxt(args.input, delimiter=',', skiprows=1)
+    if len(rsfish_spots) == 0:
+        print(f'No spots found in {args.input}')
+        return
+
+    if not args.ignore_voxel_spacing:
+        rsfish_spots[:, :3] = rsfish_spots[:, :3] * voxel_spacing
+
+    # extract unique channels
+    rsfish_channels = np.unique(rsfish_spots[:, 4]).astype(int)
+    if len(rsfish_channels) == 1:
+        # the RS-FISH result only has one channel
+        _save_results_per_channel(rsfish_spots, args.output)
+    else:
+        name, ext = os.path.splitext(args.output)
+        print(f'{args.output} -> {name}, {ext}')
+        for c in rsfish_channels:
+            channel_result_file = f'{name}-{c-1}{ext}'
+            _save_results_per_channel(rsfish_spots[rsfish_spots[:,4] == c],channel_result_file)
+
+
+def _save_results_per_channel(rsfish_spots, res_file):
+    # Remove unnecessary columns (t,c) at indexes 3 and 4 
+    rsfish_spots = np.delete(rsfish_spots, np.s_[3:5], axis=1)
+
+    print(f'Saving {rsfish_spots.shape[0]} points in micron space to {res_file}')
+    fmt = ['%.4f', '%.4f', '%.4f', '%.4f']
+
+    np.savetxt(res_file, rsfish_spots, delimiter=',', fmt=fmt)
+
+
+def _main():
+    args_parser = _define_args()
+    args = args_parser.parse_args()
+
+    # run post processing
+    _post_process_rsfish_csv_results(args)
+
+
+if __name__ == '__main__':
+    _main()
