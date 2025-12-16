@@ -73,13 +73,12 @@ def _get_spots_counts(args):
     into an output csv file
     """
     labels_zarr, labels_attrs = open_image_array(args.labels_container, args.labels_dataset)
-    image_ndim = len(labels_zarr.shape)
 
     if args.voxel_spacing:
         voxel_spacing = args.voxel_spacing[::-1]
     else:
         # get voxel spacing from input image attributes
-        voxel_spacing = get_spatial_voxel_spacing(image_attrs)
+        voxel_spacing = get_spatial_voxel_spacing(labels_attrs)
 
     if voxel_spacing is not None:
         if args.expansion_factor > 0:
