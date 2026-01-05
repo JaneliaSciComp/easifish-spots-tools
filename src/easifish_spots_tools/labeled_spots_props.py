@@ -3,10 +3,11 @@ import numpy as np
 import pandas as pd
 
 
-from .cli import floattuple
-from .io_utils.imgio import open_image_array
 from skimage.measure import regionprops
 from zarr_tools.ngff.ngff_utils import get_spatial_voxel_spacing
+
+from .cli import floattuple
+from .io_utils.read_utils import open_array
 
 
 def _define_args():
@@ -85,12 +86,12 @@ def _define_args():
 
 
 def _extract_spots_region_properties(args):
-    image_data, image_attrs = open_image_array(args.image_container, args.image_dataset,
+    image_data, image_attrs = open_array(args.image_container, args.image_dataset,
                                                data_timeindex=args.image_timeindex,
                                                data_channels=args.image_channel)
     print(f'Opened {image_data.shape} image {args.image_container}:{args.image_dataset}')
 
-    labels_zarr, _ = open_image_array(args.labels_container, args.labels_dataset,
+    labels_zarr, _ = open_array(args.labels_container, args.labels_dataset,
                                       data_timeindex=args.labels_timeindex,
                                       data_channels=args.labels_channel)
     print(f'Opened {labels_zarr.shape} labels {args.labels_container}:{args.labels_dataset}')
@@ -115,7 +116,7 @@ def _extract_spots_region_properties(args):
         (args.bleeding_channel is not None and
          args.dapi_channel is not None and
          args.bleeding_channel == args.image_channel)):
-        dapi_data, _ = open_image_array(args.image_container, args.dapi_dataset,
+        dapi_data, _ = open_array(args.image_container, args.dapi_dataset,
                                         data_timeindex=args.image_timeindex,
                                         data_channels=args.dapi_channel)
         print(f'Opened {dapi_data.shape} DAPI image {args.image_container}:{args.dapi_dataset}')

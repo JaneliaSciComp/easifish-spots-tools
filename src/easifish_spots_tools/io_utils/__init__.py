@@ -1,3 +1,3 @@
 __all__= [
-    'imgio',
+    'read_utils',
 ]

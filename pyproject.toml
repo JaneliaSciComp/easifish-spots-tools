@@ -9,10 +9,15 @@ description = "EASI-FISH pipeline tools for detecting or processing spots "
 license = "BSD-3-Clause"
 requires-python = ">=3.12"
 dependencies = [
+    "dask==2025.11.0",
+    "distributed==2025.11.0",
+    "fishspot @ git+https://github.com/cgoina/fishspot.git@c8321e9",
+    "flatten_json==0.1.14",
     "numpy>2,<3",
     "ome-zarr-models==1.3",
     "pydantic==2.12.4",
     "pyyaml",
+    "SimpleITK==2.5.3",
     "tornado",
     "zarr>3,<4",
     "zarr-tools @ git+https://github.com/JaneliaSciComp/zarr-tools.git@16271a6",

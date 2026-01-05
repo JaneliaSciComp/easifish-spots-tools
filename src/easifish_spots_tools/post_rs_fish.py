@@ -3,7 +3,7 @@ import numpy as np
 import os
 
 from .cli import floattuple
-from .io_utils.imgio import open_image_array
+from .io_utils.read_utils import read_array_attrs
 from zarr_tools.ngff.ngff_utils import get_spatial_voxel_spacing
 
 
@@ -54,7 +54,7 @@ def _post_process_rsfish_csv_results(args):
     if args.voxel_spacing:
         voxel_spacing = args.voxel_spacing[::-1]
     elif args.image_container:
-        _, image_attrs = open_image_array(args.image_container, args.image_dataset)
+        image_attrs = read_array_attrs(args.image_container, args.image_dataset)
         voxel_spacing = get_spatial_voxel_spacing(image_attrs)
     else:
         voxel_spacing = None

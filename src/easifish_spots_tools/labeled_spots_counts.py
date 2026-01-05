@@ -4,10 +4,13 @@ import os
 import pandas as pd
 import traceback
 
-from .cli import floattuple
-from .io_utils.imgio import open_image_array
 from glob import glob
+from zarr_tools.io.zarr_io import read_zarr_block
 from zarr_tools.ngff.ngff_utils import get_spatial_voxel_spacing
+
+
+from .cli import floattuple
+from .io_utils.read_utils import open_array, read_array_attrs
 
 
 def _define_args():
@@ -51,12 +54,12 @@ def _define_args():
     args_parser.add_argument('--timeindex',
                              dest='spots_timeindex',
                              type=int,
-                             help = "spots time index")
+                             help = "Time index from the labels OME ZARR used for spots counting")
 
     args_parser.add_argument('--channel',
                              dest='spots_channel',
                              type=int,
-                             help = "spots channel")
+                             help = "Channel index from the labels OME ZARR used for spots counting")
 
     args_parser.add_argument('-o','--output',
                              dest='output',
@@ -72,8 +75,7 @@ def _get_spots_counts(args):
     Aggregates all files containing spot counts files that match the pattern
     into an output csv file
     """
-    labels_zarr, labels_attrs = open_image_array(args.labels_container, args.labels_dataset)
-
+    labels_attrs = read_array_attrs(args.labels_container, args.labels_dataset)
     if args.voxel_spacing:
         voxel_spacing = args.voxel_spacing[::-1]
     else:
@@ -90,7 +92,9 @@ def _get_spots_counts(args):
     print(f"Image voxel spacing: {voxel_spacing}")
 
     fx = sorted(glob(args.spots_pattern))
-    labels = labels_zarr[...]
+
+    labels_zarr = open_array(args.labels_container, args.labels_dataset)
+    labels = read_zarr_block(labels_zarr, labels_attrs, args.spots_timeindex, args.spots_channel, None)
     label_ids = np.unique(labels[labels != 0])
     z, y, x = labels.shape[-3:]
     print(f"Found {len(label_ids)} labels - labels shape: {labels.shape}")
