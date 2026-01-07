@@ -1,13 +1,19 @@
 import argparse
+import logging
 import numpy as np
 import pandas as pd
 
 
 from skimage.measure import regionprops
+from zarr_tools.io.zarr_io import read_zarr_block
 from zarr_tools.ngff.ngff_utils import get_spatial_voxel_spacing
 
 from .cli import floattuple
-from .io_utils.read_utils import open_array
+from .io_utils.read_utils import open_array, read_array_attrs
+from .utils.configure_logging import configure_logging
+
+
+logger:logging.Logger
 
 
 def _define_args():
@@ -82,19 +88,24 @@ def _define_args():
                              required=True,
                              help = "output file in real coordinates")
 
+    args_parser.add_argument('--logging-config', dest='logging_config',
+                             type=str,
+                             help='python log file configuration')
+    args_parser.add_argument('--verbose',
+                             action='store_true',
+                             help="save debug level information to the log")
+
     return args_parser
 
 
 def _extract_spots_region_properties(args):
-    image_data, image_attrs = open_array(args.image_container, args.image_dataset,
-                                               data_timeindex=args.image_timeindex,
-                                               data_channels=args.image_channel)
-    print(f'Opened {image_data.shape} image {args.image_container}:{args.image_dataset}')
+    image_attrs = read_array_attrs(args.image_container, args.image_dataset)
+    image_zarr = open_array(args.image_container, args.image_dataset)
+    logger.info(f'Opened {image_zarr.shape} image {args.image_container}:{args.image_dataset}')
 
-    labels_zarr, _ = open_array(args.labels_container, args.labels_dataset,
-                                      data_timeindex=args.labels_timeindex,
-                                      data_channels=args.labels_channel)
-    print(f'Opened {labels_zarr.shape} labels {args.labels_container}:{args.labels_dataset}')
+    labels_attrs = read_array_attrs(args.labels_container, args.labels_dataset)
+    labels_zarr = open_array(args.labels_container, args.labels_dataset)
+    logger.info(f'Opened {labels_zarr.shape} labels {args.labels_container}:{args.labels_dataset}')
 
     if args.voxel_spacing:
         voxel_spacing = args.voxel_spacing[::-1]
@@ -108,7 +119,8 @@ def _extract_spots_region_properties(args):
     else:
         voxel_spacing = (1,) * 3
 
-    image = image_data[...]
+    # read the entire image
+    image = read_zarr_block(image_zarr, image_attrs, args.image_timeindex, args.image_channel, None)
 
     if ((args.bleeding_dataset is not None and
          args.dapi_dataset is not None and
@@ -116,11 +128,11 @@ def _extract_spots_region_properties(args):
         (args.bleeding_channel is not None and
          args.dapi_channel is not None and
          args.bleeding_channel == args.image_channel)):
-        dapi_data, _ = open_array(args.image_container, args.dapi_dataset,
-                                        data_timeindex=args.image_timeindex,
-                                        data_channels=args.dapi_channel)
-        print(f'Opened {dapi_data.shape} DAPI image {args.image_container}:{args.dapi_dataset}')
-        dapi = dapi_data[...]
+        dapi_attrs = read_array_attrs(args.image_container, args.dapi_dataset)
+        dapi_zarr = open_array(args.image_container, args.dapi_dataset)
+        print(f'Opened {dapi_zarr.shape} DAPI image {args.image_container}:{args.dapi_dataset}')
+        # read the entire DAPI image
+        dapi = read_zarr_block(dapi_zarr, dapi_attrs, args.image_timeindex, args.dapi_channel, None)
         lo = np.percentile(np.ndarray.flatten(dapi), 99.5)
         bg_dapi = np.percentile(np.ndarray.flatten(dapi[dapi != 0]), 1)
         bg_img = np.percentile(np.ndarray.flatten(image[image != 0]), 1)
@@ -132,7 +144,7 @@ def _extract_spots_region_properties(args):
         print('DAPI background:', bg_dapi)
         print('bleed_through channel background:', bg_img)
 
-    labels = labels_zarr[...]
+    labels = read_zarr_block(labels_zarr, labels_attrs, args.labels_timeindex, args.labels_channel, None)
     print(f'Extract regionprops from {labels.shape} labels and {image.shape} image')
     labels_stats = regionprops(labels, intensity_image=image, spacing=voxel_spacing)
 
@@ -154,6 +166,11 @@ def _extract_spots_region_properties(args):
 def _main():
     args_parser = _define_args()
     args = args_parser.parse_args()
+
+    # prepare logging
+    global logger
+    logger = configure_logging(args.logging_config, args.verbose)
+    logger.info(f'Invoked FishSpots with: {args}')
 
     # run post processing
     _extract_spots_region_properties(args)
