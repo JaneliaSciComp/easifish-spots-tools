@@ -1,6 +1,7 @@
 import argparse
 import logging
 import numpy as np
+import time
 
 from dask.distributed import (Client, LocalCluster)
 from pathlib import Path
@@ -125,7 +126,7 @@ def _write_spots(spots, csvfilename):
     header = 'x,y,z,t,c,intensity,sx,sy,sz'
     fmt = ['%.4f', '%.4f', '%.4f', '%d', '%d', '%.4f', '%.4f', '%.4f', '%.4f']
 
-    print(f'Write {len(spots)} spots to {csvfilename}')
+    logger.info(f'Write {len(spots)} spots to {csvfilename}')
     output_path = Path(csvfilename)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     np.savetxt(csvfilename, spots, delimiter=',', header=header, fmt=fmt)
@@ -184,6 +185,8 @@ def _main():
     else:
         psf = None
 
+    start_time = time.time()
+
     spots, _ = distributed_spot_detection(
         input_image_array,
         args.timeindex,
@@ -202,8 +205,11 @@ def _main():
         psf_retries=args.psf_retries,
     )
 
+    elapsed_time = time.time() - start_time
+    logger.info(f'Distributed spot detection completed in {elapsed_time:.2f} seconds')
+
     if args.apply_voxel_spacing:
-        print(f'Apply voxel spacing: {voxel_spacing}')
+        logger.info(f'Apply voxel spacing: {voxel_spacing}')
         spots[:, :3] = spots[:, :3] * voxel_spacing
     
     _write_spots(spots, args.output)

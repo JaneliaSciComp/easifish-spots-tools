@@ -1,4 +1,5 @@
 import argparse
+import logging
 import numpy as np
 import os
 import pandas as pd
@@ -11,6 +12,10 @@ from zarr_tools.ngff.ngff_utils import get_spatial_voxel_spacing
 
 from .cli import floattuple
 from .io_utils.read_utils import open_array, read_array_attrs
+from .utils.configure_logging import configure_logging
+
+
+logger:logging.Logger
 
 
 def _define_args():
@@ -67,6 +72,13 @@ def _define_args():
                              required=True,
                              help = "output file")
 
+    args_parser.add_argument('--logging-config', dest='logging_config',
+                             type=str,
+                             help='python log file configuration')
+    args_parser.add_argument('--verbose',
+                             action='store_true',
+                             help="save debug level information to the log")
+
     return args_parser
 
 
@@ -89,7 +101,7 @@ def _get_spots_counts(args):
     else:
         voxel_spacing = (1,) * 3
 
-    print(f"Image voxel spacing: {voxel_spacing}")
+    logger.info(f'Image voxel spacing: {voxel_spacing}')
 
     fx = sorted(glob(args.spots_pattern))
 
@@ -97,12 +109,12 @@ def _get_spots_counts(args):
     labels = read_zarr_block(labels_zarr, labels_attrs, args.spots_timeindex, args.spots_channel, None)
     label_ids = np.unique(labels[labels != 0])
     z, y, x = labels.shape[-3:]
-    print(f"Found {len(label_ids)} labels - labels shape: {labels.shape}")
+    logger.info(f'Found {len(label_ids)} labels - labels shape: {labels.shape}')
 
     count = pd.DataFrame(np.empty([len(label_ids), 0]), index=label_ids)
 
     for f in fx:
-        print("Reading", f)
+        logger.info(f'Reading {f}')
         r = os.path.basename(f).split('/')[-1]
         r = r.split('.')[0]
         spot = np.loadtxt(f, delimiter=',')
@@ -114,10 +126,10 @@ def _get_spots_counts(args):
 
         for i in range(0, n):
             if np.any(np.isnan(spot[i,:3])):
-                print('NaN found in {} line# {}'.format(f, i+1))
+                logger.info(f'NaN found in {f} line# {i+1}')
             else:
                 if np.any(spot[i,:3]<0):
-                    print(f'Point outside of fixed image found in {f} line# {i+1}', spots_coords[i], spot[i])
+                    logger.info(f'Point outside of fixed image found in {f} line# {i+1} -> {spots_coords[i]}, {spot[i]}')
                 else:
                     try:
                         # if all non-rounded coord are valid values (none is NaN)
@@ -127,14 +139,14 @@ def _get_spots_counts(args):
                             # increment counter
                             df.loc[spot_label, 'count'] = df.loc[spot_label, 'count'] + 1
                     except Exception as e:
-                        print(f'Unexpected error in {f} line# {i+1}:', e)
+                        logger.exception(f'Unexpected error in {f} line# {i+1}:')
                         traceback.print_exception(e)
 
         count.loc[:, r] = df.to_numpy()
 
     filtered_count = count[(count.iloc[:, -3:] != 0).any(axis=1)]
 
-    print("Writing", args.output)
+    logger.info(f'Writing {args.output}')
     filtered_count.to_csv(args.output, index_label='Label')
 
 
@@ -142,6 +154,7 @@ def _get_spot_label(labels, timeindex, channel, xyz_coord):
     zyx_coord = xyz_coord[::-1]
     max_coord = np.round(zyx_coord).astype(int)
     min_coord = np.maximum(np.floor(zyx_coord-1).astype(int), [0, 0, 0])
+    crange = ()
     try:
         label_ndims = labels.ndim
         time_coord = (timeindex,) if timeindex is not None and label_ndims > 3 else ()
@@ -152,12 +165,18 @@ def _get_spot_label(labels, timeindex, channel, xyz_coord):
                                                      zip(min_coord, max_coord)])
         return np.max(labels[crange])
     except Exception as e:
-        print(f'Error retrieving label at {xyz_coord} using {crange}', e)
+        logger.exception(f'Error retrieving label at {xyz_coord} using {crange}: {e}')
+        return 0
 
 
 def _main():
     args_parser = _define_args()
     args = args_parser.parse_args()
+
+    # prepare logging
+    global logger
+    logger = configure_logging(args.logging_config, args.verbose)
+    logger.info(f'Invoked spots counts with: {args}')
 
     # run post processing
     _get_spots_counts(args)

@@ -7,6 +7,7 @@ import fishspot.filter as fs_filter
 import fishspot.psf as fs_psf
 import fishspot.detect as fs_detect
 
+from dask.distributed import as_completed
 from itertools import product
 from scipy.ndimage import gaussian_filter
 from typing import List
@@ -138,8 +139,7 @@ def distributed_spot_detection(
                 overlap_coords.append(tuple(extended_coords))
                 psfs.append(psf)
 
-    logger.info(f'Partition an {spatial_shape} volume into {len(core_coords)} blocks for spot detection')
-    blocks = dask_client.map(_read_block, core_coords, overlap_coords, array=image_data)
+    logger.info(f'Partition an {spatial_shape} volume into {len(core_coords)} ({nblocks}) {blocksize} blocks for spot detection')
 
     # submit all alignments to cluster
     detect_block_spots = functools.partial(
@@ -152,16 +152,22 @@ def distributed_spot_detection(
         intensity_threshold=intensity_threshold,
         intensity_threshold_minimum=intensity_threshold_minimum,
         psf_retries=psf_retries,
+        array=image_data
     )
-    spots_and_psfs = dask_client.gather(
-        dask_client.map(detect_block_spots, blocks, psfs)
-    )
-    # reformat to single array of spots and single psf
+
+    detect_spots_tasks = dask_client.map(detect_block_spots, core_coords, overlap_coords, psfs)
+
+    logger.info(f'Start collecting results from the {len(detect_spots_tasks)} submited tasks')
+
+    # collect results and reformat to single array of spots and single psf
     spots, psfs = [], []
-    for x, y in spots_and_psfs:
-        spots.append(x)
-        if y is not None:
-            psfs.append(y)
+    for f, r in as_completed(detect_spots_tasks, with_results=True):
+        if not f.cancelled():
+            block_spots, block_psf = r
+            spots.append(block_spots)
+            if block_psf is not None:
+                psfs.append(block_psf)
+
     if len(spots) > 0:
         spots = np.vstack(spots)
     if len(psfs) > 0:
@@ -179,12 +185,8 @@ def distributed_spot_detection(
     return spots, psf
 
 
-def _read_block(core_coords, overlap_coords, array=[]):
-    return array[overlap_coords], core_coords, overlap_coords
-
-
 # pipeline to run on each block
-def _detect_block_spots(block_with_coords, psf,
+def _detect_block_spots(core_coords, overlap_coords, psf,
                         psf_estimation_args={},
                         white_tophat_args={},
                         deconvolution_args={},
@@ -192,10 +194,9 @@ def _detect_block_spots(block_with_coords, psf,
                         gaussian_sigma=None,
                         intensity_threshold=None,
                         intensity_threshold_minimum=0,
-                        psf_retries=3):
-    original_block = block_with_coords[0]
-    core_coords = block_with_coords[1]
-    overlap_coords = block_with_coords[2]
+                        psf_retries=3,
+                        array=[]):
+    original_block = array[overlap_coords]
 
     # make a copy of the block
     block = np.copy(original_block)

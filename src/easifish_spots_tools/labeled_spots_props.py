@@ -130,7 +130,7 @@ def _extract_spots_region_properties(args):
          args.bleeding_channel == args.image_channel)):
         dapi_attrs = read_array_attrs(args.image_container, args.dapi_dataset)
         dapi_zarr = open_array(args.image_container, args.dapi_dataset)
-        print(f'Opened {dapi_zarr.shape} DAPI image {args.image_container}:{args.dapi_dataset}')
+        logger.info(f'Opened {dapi_zarr.shape} DAPI image {args.image_container}:{args.dapi_dataset}')
         # read the entire DAPI image
         dapi = read_zarr_block(dapi_zarr, dapi_attrs, args.image_timeindex, args.dapi_channel, None)
         lo = np.percentile(np.ndarray.flatten(dapi), 99.5)
@@ -139,13 +139,13 @@ def _extract_spots_region_properties(args):
         dapi_factor = np.median((image[dapi > lo] - bg_img) /
                                 (dapi[dapi > lo] - bg_dapi))
         image = np.maximum(0, image - bg_img - dapi_factor * (dapi - bg_dapi)).astype('float32')
-        print(f'Corrected bleed dataset {args.image_dataset} {image.shape} image')
-        print('bleed_through:', dapi_factor)
-        print('DAPI background:', bg_dapi)
-        print('bleed_through channel background:', bg_img)
+        logger.info(f'Corrected bleed dataset {args.image_dataset} {image.shape} image')
+        logger.info(f'bleed_through: {dapi_factor}')
+        logger.info(f'DAPI background: {bg_dapi}')
+        logger.info(f'bleed_through channel background: {bg_img}')
 
     labels = read_zarr_block(labels_zarr, labels_attrs, args.labels_timeindex, args.labels_channel, None)
-    print(f'Extract regionprops from {labels.shape} labels and {image.shape} image')
+    logger.info(f'Extract regionprops from {labels.shape} labels and {image.shape} image')
     labels_stats = regionprops(labels, intensity_image=image, spacing=voxel_spacing)
 
     df = pd.DataFrame(data=np.empty([len(labels_stats), 3]),
@@ -157,7 +157,7 @@ def _extract_spots_region_properties(args):
         df.loc[i, 'mean_intensity'] = labels_stats[i].intensity_mean
         df.loc[i, 'area'] = labels_stats[i].area
 
-    print("Writing", args.output)
+    logger.info(f'Writing {args.output}')
     df.to_csv(args.output, index=False)
 
 
