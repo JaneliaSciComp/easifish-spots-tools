@@ -1,6 +1,6 @@
 FROM ghcr.io/janeliascicomp/dask:2025.11.0-py12-ol9
 ARG SPOTS_TOOLS_BRANCH=main
-ARG SPOTS_TOOLS_COMMIT=5365b0a
+ARG SPOTS_TOOLS_COMMIT=05b3785
 
 WORKDIR /opt/scripts/spots-utils
 
