@@ -138,6 +138,7 @@ def distributed_spot_detection(
                 overlap_coords.append(tuple(extended_coords))
                 psfs.append(psf)
 
+    logger.info(f'Partition an {spatial_shape} volume into {len(core_coords)} blocks for spot detection')
     blocks = dask_client.map(_read_block, core_coords, overlap_coords, array=image_data)
 
     # submit all alignments to cluster
