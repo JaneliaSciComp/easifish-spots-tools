@@ -98,7 +98,7 @@ def distributed_spot_detection(
     nblocks = np.ceil(np.array(spatial_shape) / blocksize).astype(int)
 
     # determine coords for blocking
-    overlap_coords, core_coords, psfs = [], [], []
+    block_indices, overlap_coords, core_coords, psfs = [], [], [], []
     for tp in spots_timepoints:
         for ch in spots_channels:
 
@@ -135,6 +135,7 @@ def distributed_spot_detection(
                 extended_coords.extend([slice(x, y) for x, y in zip(extended_start, extended_stop)])
 
                 # add coordinate slices to list
+                block_indices.append((tp, ch) + (i,j,k))
                 core_coords.append(block_coords)
                 overlap_coords.append(tuple(extended_coords))
                 psfs.append(psf)
@@ -155,7 +156,7 @@ def distributed_spot_detection(
         array=image_data
     )
 
-    detect_spots_tasks = dask_client.map(detect_block_spots, core_coords, overlap_coords, psfs)
+    detect_spots_tasks = dask_client.map(detect_block_spots, block_indices, core_coords, overlap_coords, psfs)
 
     logger.info(f'Start collecting results from the {len(detect_spots_tasks)} submited tasks')
 
@@ -163,7 +164,8 @@ def distributed_spot_detection(
     spots, psfs = [], []
     for f, r in as_completed(detect_spots_tasks, with_results=True):
         if not f.cancelled():
-            block_spots, block_psf = r
+            block_index, block_spots, block_psf = r
+            logger.info(f'Completed block {block_index}. Found {len(block_spots)} spots')
             spots.append(block_spots)
             if block_psf is not None:
                 psfs.append(block_psf)
@@ -186,7 +188,7 @@ def distributed_spot_detection(
 
 
 # pipeline to run on each block
-def _detect_block_spots(core_coords, overlap_coords, psf,
+def _detect_block_spots(block_index, core_coords, overlap_coords, psf,
                         psf_estimation_args={},
                         white_tophat_args={},
                         deconvolution_args={},
@@ -210,7 +212,7 @@ def _detect_block_spots(core_coords, overlap_coords, psf,
     else:
         timeindex = 1
     
-    logger.info(f'Detect spots for {core_coords} ({overlap_coords}) block of size {block.shape}')
+    logger.info(f'Detect spots for block {block_index} at {core_coords} ({overlap_coords}) of size {block.shape}')
 
     # load data, background subtract, deconvolve, detect blobs
     wth_filtered_block = fs_filter.white_tophat(block, **white_tophat_args)
@@ -247,7 +249,7 @@ def _detect_block_spots(core_coords, overlap_coords, psf,
 
     if spots.shape[0] == 0:
         # if no spots are found, ensure consistent format - z,y,x,intensity,sigma_x,sigma_y,sigma_z
-        return np.zeros((0, len(block.shape) + 6)), psf
+        return block_index, np.zeros((0, len(block.shape) + 6)), psf
     else:
         # remove spots found in the overlap region
         core_origin = [x.start-y.start for x, y in zip(core_coords[-3:], overlap_coords[-3:])]
@@ -280,5 +282,5 @@ def _detect_block_spots(core_coords, overlap_coords, psf,
         # adjust for block origin
         origin = np.array([x.start for x in overlap_coords[-3:]])
         spots[:, :3] = spots[:, :3] + origin
-        logger.info(f'Block {core_coords} ({overlap_coords}) -> found: {spots.shape} spots')
-        return spots, psf
+        logger.info(f'Block {block_index} at {core_coords} ({overlap_coords}) finished -> found: {spots.shape} spots')
+        return block_index, spots, psf
