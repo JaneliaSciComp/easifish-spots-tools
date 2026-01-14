@@ -92,8 +92,8 @@ def _save_results_per_channel(rsfish_spots, res_file):
     # Remove unnecessary columns (t,c) at indexes 3 and 4 
     rsfish_spots = np.delete(rsfish_spots, np.s_[3:5], axis=1)
 
-    print(f'Saving {rsfish_spots.shape[0]} points in micron space to {res_file}')
-    fmt = ['%.4f', '%.4f', '%.4f', '%.4f']
+    print(f'Saving {rsfish_spots.shape} points in micron space to {res_file}')
+    fmt = ['%.4f'] * rsfish_spots.shape[1]
 
     np.savetxt(res_file, rsfish_spots, delimiter=',', fmt=fmt)
 
