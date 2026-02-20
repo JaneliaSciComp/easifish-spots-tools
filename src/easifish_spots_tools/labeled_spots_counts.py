@@ -6,7 +6,7 @@ import pandas as pd
 import zarr
 
 from glob import glob
-from zarr_tools.ngff.ngff_utils import get_spatial_voxel_spacing
+from zarr_tools.ngff.ngff_utils import get_spatial_dataset_voxel_spacing
 
 
 from .cli import floattuple
@@ -26,17 +26,6 @@ def _inttuple(arg):
 
 def _define_args():
     args_parser = argparse.ArgumentParser()
-    args_parser.add_argument('--labels-container',
-                             dest='labels_container',
-                             type=str,
-                             required=False,
-                             help = "path to the labels container")
-    args_parser.add_argument('--labels-subpath', '--labels-dataset',
-                             dest='labels_dataset',
-                             type=str,
-                             required=False,
-                             help = "path to the labels container")
-
     args_parser.add_argument('--image-container',
                              dest='image_container',
                              type=str,
@@ -46,10 +35,22 @@ def _define_args():
                              type=str,
                              help = "image subpath")
 
-    args_parser.add_argument('--voxel-spacing', '--voxel_spacing',
-                             dest='voxel_spacing',
+    args_parser.add_argument('--labels-container',
+                             dest='labels_container',
+                             type=str,
+                             required=True,
+                             help = "path to the labels container")
+    args_parser.add_argument('--labels-subpath', '--labels-dataset',
+                             dest='labels_dataset',
+                             type=str,
+                             required=False,
+                             help = "path to the labels container")
+
+    args_parser.add_argument('--labels-voxel-spacing', '--labels_voxel_spacing',
+                             dest='labels_voxel_spacing',
                              type=floattuple,
-                             help = "voxel spacing")
+                             metavar="SX,SY,SZ",
+                             help = "Labels voxel spacing")
     args_parser.add_argument('--expansion-factor', '--expansion_factor',
                              dest='expansion_factor',
                              type=float,
@@ -99,21 +100,28 @@ def _get_spots_counts(args):
     Aggregates all files containing spot counts files that match the pattern
     into an output csv file
     """
-    labels_attrs = read_array_attrs(args.labels_container, args.labels_dataset)
-    if args.voxel_spacing:
-        voxel_spacing = args.voxel_spacing[::-1]
+    if args.labels_voxel_spacing:
+        labels_voxel_spacing = np.array(args.labels_voxel_spacing)
     else:
-        # get voxel spacing from input image attributes
-        voxel_spacing = get_spatial_voxel_spacing(labels_attrs)
+        labels_attrs = read_array_attrs(args.labels_container, args.labels_dataset)
+        # get label voxel spacing from labels image attributes
+        labels_voxel_spacing = get_spatial_dataset_voxel_spacing(labels_attrs, args.labels_dataset)
 
-    if voxel_spacing is not None:
+    if labels_voxel_spacing is None:
+        # the segmentation image does not have information about the voxel spacing
+        # try to get that info from the image
+        image_attrs = read_array_attrs(args.image_container, args.image_dataset)
+        # get label voxel spacing from labels image attributes
+        labels_voxel_spacing = get_spatial_dataset_voxel_spacing(image_attrs, args.image_dataset)
+
+    if labels_voxel_spacing is not None:
         if args.expansion_factor > 0:
             expansion = args.expansion_factor
-            voxel_spacing /= expansion
+            labels_voxel_spacing /= expansion
     else:
-        voxel_spacing = (1,) * 3
+        labels_voxel_spacing = (1,) * 3
 
-    logger.info(f'Image voxel spacing: {voxel_spacing}')
+    logger.info(f'Labels voxel spacing at {args.labels_dataset}: {labels_voxel_spacing}')
 
     processing_blocksize = args.processing_blocksize[::-1] if args.processing_blocksize else None
 
@@ -134,21 +142,18 @@ def _get_spots_counts(args):
 
         # Convert from micrometer space to the voxel space of the segmented image
         # CSV columns are x,y,z — convert to z,y,x and scale to voxel space
-        spots_zyx = spots[:, :3][:, ::-1] / voxel_spacing
-
+        spots_zyx = spots[:, :3][:, ::-1] / labels_voxel_spacing
         spots_per_file[f] = spots_zyx
 
-
     spot_counts = pd.DataFrame()
-
+    # open labels image
     labels_zarr = open_array(args.labels_container, args.labels_dataset)
-
     _blockwise_spot_count(labels_zarr,
                           args.labels_timeindex,
                           args.labels_channel,
                           processing_blocksize,
                           spots_per_file,
-                          voxel_spacing,
+                          labels_voxel_spacing,
                           spot_counts)
 
     # drop rows where all file columns are zero

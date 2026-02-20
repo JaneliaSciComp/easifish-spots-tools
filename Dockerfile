@@ -2,6 +2,9 @@ FROM ghcr.io/janeliascicomp/dask:2025.11.0-py12-ol9
 ARG SPOTS_TOOLS_BRANCH=main
 ARG SPOTS_TOOLS_COMMIT=05b3785
 
+RUN dnf install -y \
+        git
+
 WORKDIR /opt/scripts/spots-utils
 
 ENV MKL_NUM_THREADS=
@@ -15,14 +18,13 @@ ENV PIP_ROOT_USER_ACTION=ignore
 # Use the base environment from the baseImage and the conda-env
 # from current dir
 COPY conda-env.yml .
-RUN mamba env update -n base -f conda-env.yaml
+RUN mamba env update -n base -f conda-env.yml
 RUN echo ${SPOTS_TOOLS_COMMIT} > .commit
 
 # install bigstream
 COPY configs configs
 COPY src src
 
-COPY *.py .
 COPY *.toml .
 COPY *.md .
 

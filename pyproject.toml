@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "easifish-spots-tools"
-version = "0.3.0"
+version = "0.4.0"
 description = "EASI-FISH pipeline tools for detecting or processing spots "
 license = "BSD-3-Clause"
 requires-python = ">=3.12"
@@ -20,7 +20,7 @@ dependencies = [
     "SimpleITK==2.5.3",
     "tornado",
     "zarr>3,<4",
-    "zarr-tools @ git+https://github.com/JaneliaSciComp/zarr-tools.git@16271a6",
+    "zarr-tools @ git+https://github.com/JaneliaSciComp/zarr-tools.git@74dce46",
 ]
 
 [tool.setuptools.packages.find]
