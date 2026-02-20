@@ -33,7 +33,8 @@ def _define_args():
     args_parser.add_argument('--voxel-spacing', '--voxel_spacing',
                              dest='voxel_spacing',
                              type=floattuple,
-                             help = "voxel spacing")
+                             metavar='SX,SY,SZ',
+                             help = "Voxel spacing")
     args_parser.add_argument('--expansion-factor', '--expansion_factor',
                              dest='expansion_factor',
                              type=float,
@@ -51,11 +52,17 @@ def _define_args():
 
 def _post_process_rsfish_csv_results(args):
 
+    # the coordinates in the spots file are as x,y,z
+    # so we need to ensure the voxel spacing is also as sx,sy,sz
     if args.voxel_spacing:
-        voxel_spacing = args.voxel_spacing[::-1]
+        # leave the voxel spacing as (X,Y,Z)
+        voxel_spacing = np.array(args.voxel_spacing)
     elif args.image_container:
         image_attrs = read_array_attrs(args.image_container, args.image_dataset)
         voxel_spacing = get_spatial_voxel_spacing(image_attrs)
+        if voxel_spacing is not None:
+            # voxel spacing is returned as SZ,SY,SX so revert it
+            voxel_spacing = voxel_spacing[::-1]
     else:
         voxel_spacing = None
 
@@ -65,9 +72,21 @@ def _post_process_rsfish_csv_results(args):
     else:
         voxel_spacing = (1,) * 3
 
-    print(f"Image voxel spacing: {voxel_spacing}")
+    print(f'Image voxel spacing (sx.sy,sz): {voxel_spacing}')
 
-    rsfish_spots = np.loadtxt(args.input, delimiter=',', skiprows=1)
+    with open(args.input, 'r') as f:
+        first_line = f.readline().strip()
+
+    # check if the first line is a header (non-numeric) or data
+    try:
+        np.array(first_line.split(','), dtype=float)
+        header = None
+        skiprows = 0
+    except ValueError:
+        header = first_line
+        skiprows = 1
+
+    rsfish_spots = np.loadtxt(args.input, delimiter=',', skiprows=skiprows)
     if len(rsfish_spots) == 0:
         print(f'No spots found in {args.input}')
         return
@@ -79,23 +98,30 @@ def _post_process_rsfish_csv_results(args):
     rsfish_channels = np.unique(rsfish_spots[:, 4]).astype(int)
     if len(rsfish_channels) == 1:
         # the RS-FISH result only has one channel
-        _save_results_per_channel(rsfish_spots, args.output)
+        _save_results_per_channel(rsfish_spots, args.output, header)
     else:
         name, ext = os.path.splitext(args.output)
         print(f'{args.output} -> {name}, {ext}')
         for c in rsfish_channels:
             channel_result_file = f'{name}-{c-1}{ext}'
-            _save_results_per_channel(rsfish_spots[rsfish_spots[:,4] == c],channel_result_file)
+            _save_results_per_channel(rsfish_spots[rsfish_spots[:,4] == c], channel_result_file, header)
 
 
-def _save_results_per_channel(rsfish_spots, res_file):
-    # Remove unnecessary columns (t,c) at indexes 3 and 4 
+def _save_results_per_channel(rsfish_spots, res_file, header):
+    # Remove unnecessary columns (t,c) at indexes 3 and 4
     rsfish_spots = np.delete(rsfish_spots, np.s_[3:5], axis=1)
 
     print(f'Saving {rsfish_spots.shape} points in micron space to {res_file}')
     fmt = ['%.4f'] * rsfish_spots.shape[1]
 
-    np.savetxt(res_file, rsfish_spots, delimiter=',', fmt=fmt)
+    if header:
+        # Remove t,c columns from header as well
+        header_cols = header.split(',')
+        header_cols = [c for i, c in enumerate(header_cols) if i not in (3, 4)]
+        header = ','.join(header_cols)
+        np.savetxt(res_file, rsfish_spots, delimiter=',', fmt=fmt, header=header, comments='')
+    else:
+        np.savetxt(res_file, rsfish_spots, delimiter=',', fmt=fmt)
 
 
 def _main():

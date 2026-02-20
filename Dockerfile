@@ -14,7 +14,7 @@ ENV PIP_ROOT_USER_ACTION=ignore
 
 # Use the base environment from the baseImage and the conda-env
 # from current dir
-COPY conda-env.yaml .
+COPY conda-env.yml .
 RUN mamba env update -n base -f conda-env.yaml
 RUN echo ${SPOTS_TOOLS_COMMIT} > .commit
 
