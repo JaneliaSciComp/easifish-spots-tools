@@ -143,7 +143,8 @@ def _get_spots_counts(args):
         # Convert from micrometer space to the voxel space of the segmented image
         # CSV columns are x,y,z — convert to z,y,x and scale to voxel space
         spots_zyx = spots[:, :3][:, ::-1] / labels_voxel_spacing
-        spots_per_file[f] = spots_zyx
+        # round the zyx coordinates to the nearest int
+        spots_per_file[f] = np.round(spots_zyx).astype(int)
 
     spot_counts = pd.DataFrame()
     # open labels image
@@ -170,7 +171,7 @@ def _blockwise_spot_count(labels_zarr:zarr.Array,
                           timeindex:int|None,
                           labels_channel:int|None,
                           blocksize,
-                          spots_files,
+                          spots_files, # mapping of file -> ndarray[int]
                           voxel_spacing,
                           counts):
     """Count spots per label by reading one labels block at a time.
@@ -194,18 +195,17 @@ def _blockwise_spot_count(labels_zarr:zarr.Array,
     spatial_shape = np.array(labels_zarr.shape[-3:])
     blocksize = np.array(blocksize) if blocksize is not None else spatial_shape
     nblocks = np.ceil(spatial_shape / blocksize).astype(int)
-
+    logger.info(f'Split {spatial_shape} labels image into {nblocks} blocks of size {blocksize}')
     timeindex_and_channel = []
     if timeindex is not None:
         timeindex_and_channel.append(timeindex)
     if labels_channel is not None:
         timeindex_and_channel.append(labels_channel)
-    
+
     for block_index in np.ndindex(*nblocks):
         start = blocksize * np.array(block_index)
         stop = np.minimum(spatial_shape, start + blocksize)
         block_coords = tuple(timeindex_and_channel + [slice(int(s), int(e)) for s, e in zip(start, stop)])
-
         logger.info(f'Reading labels block {block_index} / {tuple(nblocks)}: {block_coords}')
         block_labels = labels_zarr[block_coords]
         block_label_ids = np.unique(block_labels[block_labels != 0])
@@ -224,12 +224,11 @@ def _blockwise_spot_count(labels_zarr:zarr.Array,
             for spot_zyx in block_spots_zyx:
                 if np.any(np.isnan(spot_zyx)):
                     continue
-                local_zyx = spot_zyx - start
-                local_idx = np.round(local_zyx).astype(int)
-                if np.any(local_idx < 0) or np.any(local_idx >= block_labels.shape):
+                local_idx = spot_zyx - start
+                if np.any(local_idx < 0) or np.any(local_idx > block_labels.shape):
                     logger.warning((
                         f'Block {block_index} at {block_coords} '
-                        f'unexpected out of bounds for {spot_zyx} ({spot_zyx * voxel_spacing}) -> {local_zyx} '
+                        f'unexpected out of bounds for {spot_zyx} ({spot_zyx * voxel_spacing}) -> {local_idx} '
                     ))
                     continue
                 try:
