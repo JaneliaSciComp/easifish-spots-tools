@@ -202,6 +202,14 @@ def _blockwise_spot_count(labels_zarr:zarr.Array,
     if labels_channel is not None:
         timeindex_and_channel.append(labels_channel)
 
+    if len(timeindex_and_channel) + len(blocksize) < len(labels_zarr.shape):
+        # this is hacky and I am wondering whether I should just let it fail
+        logger.warning((
+            f'Timeindex or channel have not been specified for the {labels_zarr.ndim}D labels of shape {labels_zarr.shape} '
+            'so automatically we use the 0 hyperplane for missing dimensions'
+        ))
+        timeindex_and_channel = [0 for _ in range(len(labels_zarr.shape) - len(blocksize))]
+
     for block_index in np.ndindex(*nblocks):
         start = blocksize * np.array(block_index)
         stop = np.minimum(spatial_shape, start + blocksize)
@@ -210,6 +218,7 @@ def _blockwise_spot_count(labels_zarr:zarr.Array,
         block_labels = labels_zarr[block_coords]
         block_label_ids = np.unique(block_labels[block_labels != 0])
         logger.info(f'Block {block_index} ({block_labels.shape}) found {len(block_label_ids)} labels')
+        spatial_block_shape = block_labels.shape[-3:]
 
         for f, spots_zyx in spots_files.items():
             r = os.path.splitext(os.path.basename(f))[0]
@@ -225,20 +234,25 @@ def _blockwise_spot_count(labels_zarr:zarr.Array,
                 if np.any(np.isnan(spot_zyx)):
                     continue
                 local_idx = spot_zyx - start
-                if np.any(local_idx < 0) or np.any(local_idx > block_labels.shape):
+                if np.any(local_idx < 0) or np.any(local_idx > spatial_block_shape):
                     logger.warning((
                         f'Block {block_index} at {block_coords} '
                         f'unexpected out of bounds for {spot_zyx} ({spot_zyx * voxel_spacing}) -> {local_idx} '
                     ))
                     continue
+                # just in case the labels are higher dimension than 3D
+                # get the 0 hyperplanes for the missing dimensions
+                label_coords = (tuple(local_idx)
+                                if len(local_idx) == len(block_labels.shape)
+                                else (0,) * (len(block_labels.shape) - len(local_idx)) + tuple(local_idx))
                 try:
-                    label = int(block_labels[tuple(local_idx)])
+                    label = int(block_labels[label_coords])
                     if label > 0:
                         if label not in counts.index:
                             counts.loc[label] = 0
                         counts.loc[label, r] += 1
                 except Exception as e:
-                    logger.exception(f'Error looking up label at {spot_zyx}: {e}')
+                    logger.exception(f'Error looking up label at {spot_zyx} ({label_coords}): {e}')
 
     return counts
 
