@@ -181,7 +181,7 @@ def _main():
 
     psf_file = Path(args.psf_file) if args.psf_file else None
     if psf_file is not None and psf_file.exists() and psf_file.is_file():
-        psf = np.load(psf_file)
+        psf = _load_psf(psf_file)
     else:
         psf = None
 
@@ -210,9 +210,22 @@ def _main():
 
     if args.apply_voxel_spacing:
         logger.info(f'Apply voxel spacing: {voxel_spacing}')
-        spots[:, :3] = spots[:, :3] * voxel_spacing
+        spots[:, :3] *= voxel_spacing # multiply the X,Y,Z
+        spots[:, -3:] *= voxel_spacing # multiply the standard deviation values - sx,sy,sz
     
     _write_spots(spots, args.output)
+
+
+def _load_psf(psf_file: Path) -> np.ndarray:
+    if psf_file.suffix == '.npy':
+        return np.load(psf_file)
+    elif psf_file.suffix == '.nrrd':
+        import nrrd
+        data, _ = nrrd.read(str(psf_file))
+        return data.transpose(2, 1, 0) # x,y,z -> z,y,x
+    else:
+        raise ValueError(f'Cannot load {psf_file} - unsupported PSF file format: {psf_file.suffix}')
+
 
 if __name__ == '__main__':
     _main()

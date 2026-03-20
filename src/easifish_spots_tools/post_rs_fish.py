@@ -93,7 +93,12 @@ def _post_process_rsfish_csv_results(args):
         return
 
     if not args.ignore_voxel_spacing:
-        rsfish_spots[:, :3] = rsfish_spots[:, :3] * voxel_spacing
+        spots_shape = rsfish_spots.shape
+        rsfish_spots[:, :3] *= voxel_spacing
+        if spots_shape[1] > 6:
+            # if there are standard deviation values (FISHSPOT generates these)
+            # then convert those values into physical coordinates too
+            rsfish_spots[:, 6:] *= voxel_spacing
 
     # extract unique channels
     rsfish_channels = np.unique(rsfish_spots[:, 4]).astype(int)
