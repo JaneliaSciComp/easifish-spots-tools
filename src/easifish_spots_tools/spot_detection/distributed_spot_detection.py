@@ -165,10 +165,12 @@ def distributed_spot_detection(
     for f, r in as_completed(detect_spots_tasks, with_results=True):
         if not f.cancelled():
             block_index, block_spots, block_psf = r
-            logger.info(f'Completed block {block_index}. Found {len(block_spots)} spots')
+            logger.debug(f'Completed block {block_index}. Found {len(block_spots)} spots')
             spots.append(block_spots)
             if block_psf is not None:
                 psfs.append(block_psf)
+            if len(spots) % 500 == 0:
+                logger.info(f'Completed {len(spots)} blocks so far out of {len(detect_spots_tasks)}')
 
     if len(spots) > 0:
         spots = np.vstack(spots)
