@@ -34,11 +34,6 @@ def _define_args():
                              dest='voxel_spacing',
                              type=floattuple,
                              help='Image voxel spacing')
-    args_parser.add_argument('--expansion', '--expansion-factor',
-                             dest='expansion_factor',
-                             type=float,
-                             default=1.0,
-                             help='Volume expansion factor')
     args_parser.add_argument('--timeindex',
                              type=int,
                              default=None,
@@ -49,6 +44,11 @@ def _define_args():
                              nargs='+',
                              default=[],
                              help='List of channel indices to process')
+    args_parser.add_argument('--reference-subpath-for-spots-output',
+                             dest='spots_dataset_subpath_reference',
+                             type=str,
+                             default=None,
+                             help='Dataset subpath used for getting the shape of the output spots image. If no value is provided will use the same shape as the input')
     args_parser.add_argument('--excluded-channels',
                              dest='excluded_channels',
                              type=int,
@@ -59,11 +59,11 @@ def _define_args():
                              type=str,
                              required=True,
                              help='Path to the output file')
-    args_parser.add_argument('--apply-voxel-spacing', '--apply_voxel_spacing',
-                             dest='apply_voxel_spacing',
-                             action='store_true',
-                             default=False,
-                             help="Apply voxel spacing")
+
+    args_parser.add_argument('--output-spots-imagename',
+                             dest='output_spots_image_name',
+                             type=str,
+                             help='Path to the output spots image file')
 
     args_parser.add_argument('--dask-scheduler',
                              dest='dask_scheduler',
@@ -124,19 +124,6 @@ def _define_args():
     return args_parser
 
 
-def _write_spots(spots, csvfilename):
-    # x,y,z -> z,y,x
-    spots[:, :3] = spots[:, :3][:,::-1]
-
-    header = 'x,y,z,t,c,intensity,sx,sy,sz'
-    fmt = ['%.4f', '%.4f', '%.4f', '%d', '%d', '%.4f', '%.4f', '%.4f', '%.4f']
-
-    logger.info(f'Write {len(spots)} spots to {csvfilename}')
-    output_path = Path(csvfilename)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    np.savetxt(csvfilename, spots, delimiter=',', header=header, fmt=fmt)
-
-
 def _main():
     # parse CLI args
     args_parser = _define_args()
@@ -192,7 +179,8 @@ def _main():
 
     start_time = time.time()
 
-    spots, _ = distributed_spot_detection(
+    # get all spots as zyx
+    spots_zyx, _ = distributed_spot_detection(
         input_image_array,
         args.timeindex,
         args.channels,
@@ -213,12 +201,57 @@ def _main():
     elapsed_time = time.time() - start_time
     logger.info(f'Distributed spot detection completed in {elapsed_time:.2f} seconds')
 
-    if args.apply_voxel_spacing:
-        logger.info(f'Apply voxel spacing: {voxel_spacing} with expansion factor {args.expansion_factor}')
-        spots[:, :3] *= voxel_spacing / args.expansion_factor # multiply the X,Y,Z
-        spots[:, -3:] *= voxel_spacing / args.expansion_factor # multiply the standard deviation values - sx,sy,sz
-    
-    _write_spots(spots, args.output)
+    # z,y,x -> x,y,z
+    spots_xyz = np.copy(spots_zyx)
+    spots_xyz[:, :3] = spots_xyz[:, :3][:,::-1]
+    # sz,sy,sx -> sx, sy, sz
+    spots_xyz[:, -3:] = spots_xyz[:, -3:][:, ::-1]
+
+    _write_spots(spots_xyz, 'x,y,z,t,c,intensity,sx,sy,sz', args.output)
+
+    if args.output_spots_image_name:
+        spots_dataset_reference = (args.spots_dataset_subpath_reference
+                                   if args.spots_dataset_subpath_reference
+                                   else args.input_subpath)
+        spots_reference_image_attrs = read_array_attrs(args.input, spots_dataset_reference)
+        spots_image_shape = spots_reference_image_attrs['array_shape']
+        spots_reference_voxel_spacing = get_spatial_voxel_spacing(spots_reference_image_attrs)
+
+        output_spots_image = Path(args.output).parent / args.output_spots_image_name
+
+        _generate_spots_image(spots_zyx, voxel_spacing, spots_image_shape, spots_reference_voxel_spacing, output_spots_image)
+
+
+def _generate_spots_image(spots_zyx:np.ndarray,
+                          input_voxel_spacing:np.ndarray,
+                          image_shape:tuple,
+                          reference_voxel_spacing:np.ndarray,
+                          output_path: Path):
+    import nrrd
+
+    spatial_shape = image_shape[-3:]
+    channels = np.unique(spots_zyx[:, 4].astype(int))
+
+    for channel in channels:
+        channel_spots = spots_zyx[spots_zyx[:, 4].astype(int) == channel]
+
+        spot_image = np.zeros(spatial_shape, dtype=np.uint16)
+        # convert from input voxel coords -> physical -> reference voxel indices
+        coords = (channel_spots[:, :3] * input_voxel_spacing / reference_voxel_spacing).astype(int)
+
+        for coord in coords:
+            spot_image[coord[0]-1:coord[0]+1,
+                       coord[1]-1:coord[1]+1,
+                       coord[2]-1:coord[2]+1] += 1
+
+        if len(channels) > 1:
+            out_file = output_path.with_name(f'{output_path.stem}_ch{channel}{output_path.suffix}')
+        else:
+            out_file = output_path
+
+        logger.info(f'Writing spots image for channel {channel} ({len(channel_spots)} spots) to {out_file}')
+        out_file.parent.mkdir(parents=True, exist_ok=True)
+        nrrd.write(str(out_file), spot_image.transpose(2,1,0), compression_level=2)
 
 
 def _load_psf(psf_file: Path) -> np.ndarray:
@@ -230,6 +263,15 @@ def _load_psf(psf_file: Path) -> np.ndarray:
         return data.transpose(2, 1, 0) # x,y,z -> z,y,x
     else:
         raise ValueError(f'Cannot load {psf_file} - unsupported PSF file format: {psf_file.suffix}')
+
+
+def _write_spots(spots, header, csvfilename):
+    fmt = ['%.4f', '%.4f', '%.4f', '%d', '%d', '%.4f', '%.4f', '%.4f', '%.4f']
+
+    logger.info(f'Write {len(spots)} spots to {csvfilename}')
+    output_path = Path(csvfilename)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    np.savetxt(csvfilename, spots, delimiter=',', header=header, fmt=fmt)
 
 
 if __name__ == '__main__':

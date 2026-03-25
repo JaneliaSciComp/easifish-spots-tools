@@ -265,7 +265,7 @@ def _detect_block_spots(block_index, core_coords, overlap_coords, psf,
             intensity_threshold = max(intensity_threshold, intensity_threshold_minimum)
         logger.info(f'Using intensity threshold: {intensity_threshold}')
 
-        # spots shape -> (n_spots, 6) [[x, y, z, sigma_x, sigma_y, sigma_z]]
+        # spots shape -> (n_spots, 6) [[z, y, x, sigma_z, sigma_y, sigma_x]]
         # append image intensities
         nspots = spots.shape[0]
         spot_coords = spots[:, :3].astype(int)
