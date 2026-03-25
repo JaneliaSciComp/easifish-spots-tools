@@ -44,11 +44,6 @@ def _define_args():
                              nargs='+',
                              default=[],
                              help='List of channel indices to process')
-    args_parser.add_argument('--reference-subpath-for-spots-output',
-                             dest='spots_dataset_subpath_reference',
-                             type=str,
-                             default=None,
-                             help='Dataset subpath used for getting the shape of the output spots image. If no value is provided will use the same shape as the input')
     args_parser.add_argument('--excluded-channels',
                              dest='excluded_channels',
                              type=int,
@@ -64,6 +59,11 @@ def _define_args():
                              dest='output_spots_image_name',
                              type=str,
                              help='Path to the output spots image file')
+    args_parser.add_argument('--spots-image-subpath-reference',
+                             dest='spots_dataset_subpath_reference',
+                             type=str,
+                             default=None,
+                             help='Dataset subpath used for getting the shape of the output spots image. If no value is provided will use the same shape as the input')
 
     args_parser.add_argument('--dask-scheduler',
                              dest='dask_scheduler',
@@ -234,15 +234,15 @@ def _generate_spots_image(spots_zyx:np.ndarray,
 
     for channel in channels:
         channel_spots = spots_zyx[spots_zyx[:, 4].astype(int) == channel]
-
-        spot_image = np.zeros(spatial_shape, dtype=np.uint16)
+        # create the spots image
+        ch_spots_image = np.zeros(spatial_shape, dtype=np.uint16)
         # convert from input voxel coords -> physical -> reference voxel indices
         coords = (channel_spots[:, :3] * input_voxel_spacing / reference_voxel_spacing).astype(int)
 
         for coord in coords:
-            spot_image[coord[0]-1:coord[0]+1,
-                       coord[1]-1:coord[1]+1,
-                       coord[2]-1:coord[2]+1] += 1
+            ch_spots_image[coord[0]-1:coord[0]+1,
+                           coord[1]-1:coord[1]+1,
+                           coord[2]-1:coord[2]+1] += 1
 
         if len(channels) > 1:
             out_file = output_path.with_name(f'{output_path.stem}_ch{channel}{output_path.suffix}')
@@ -251,7 +251,7 @@ def _generate_spots_image(spots_zyx:np.ndarray,
 
         logger.info(f'Writing spots image for channel {channel} ({len(channel_spots)} spots) to {out_file}')
         out_file.parent.mkdir(parents=True, exist_ok=True)
-        nrrd.write(str(out_file), spot_image.transpose(2,1,0), compression_level=2)
+        nrrd.write(str(out_file), ch_spots_image.transpose(2,1,0), compression_level=2)
 
 
 def _load_psf(psf_file: Path) -> np.ndarray:
