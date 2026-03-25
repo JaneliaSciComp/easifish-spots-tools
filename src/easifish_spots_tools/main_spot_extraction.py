@@ -34,6 +34,11 @@ def _define_args():
                              dest='voxel_spacing',
                              type=floattuple,
                              help='Image voxel spacing')
+    args_parser.add_argument('--expansion', '--expansion-factor',
+                             dest='expansion_factor',
+                             type=float,
+                             default=1.0,
+                             help='Volume expansion factor')
     args_parser.add_argument('--timeindex',
                              type=int,
                              default=None,
@@ -160,7 +165,7 @@ def _main():
 
     if args.voxel_spacing is not None:
         # voxel spacing is specified in the command line, so use this value
-        voxel_spacing = args.voxel_spacing[::-1] # this is specified as XYZ and we want it as ZYX
+        voxel_spacing = np.array(args.voxel_spacing[::-1]) # this is specified as XYZ and we want it as ZYX
     else:
         voxel_spacing = get_spatial_voxel_spacing(input_image_attrs)
 
@@ -209,9 +214,9 @@ def _main():
     logger.info(f'Distributed spot detection completed in {elapsed_time:.2f} seconds')
 
     if args.apply_voxel_spacing:
-        logger.info(f'Apply voxel spacing: {voxel_spacing}')
-        spots[:, :3] *= voxel_spacing # multiply the X,Y,Z
-        spots[:, -3:] *= voxel_spacing # multiply the standard deviation values - sx,sy,sz
+        logger.info(f'Apply voxel spacing: {voxel_spacing} with expansion factor {args.expansion_factor}')
+        spots[:, :3] *= voxel_spacing / args.expansion_factor # multiply the X,Y,Z
+        spots[:, -3:] *= voxel_spacing / args.expansion_factor # multiply the standard deviation values - sx,sy,sz
     
     _write_spots(spots, args.output)
 

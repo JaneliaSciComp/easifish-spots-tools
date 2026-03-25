@@ -5,7 +5,7 @@ import numpy as np
 
 from pathlib import Path
 
-from .cli import floattuple, inttuple
+from .cli import inttuple
 from .io_utils.read_utils import open_array, read_array_attrs
 from .spot_detection.configure_fishspots import get_fishspots_config
 from .utils.configure_logging import configure_logging

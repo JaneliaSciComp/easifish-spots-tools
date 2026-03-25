@@ -35,10 +35,10 @@ def _define_args():
                              type=floattuple,
                              metavar='SX,SY,SZ',
                              help = "Voxel spacing")
-    args_parser.add_argument('--expansion-factor', '--expansion_factor',
+    args_parser.add_argument('--expansion', '--expansion-factor', '--expansion_factor',
                              dest='expansion_factor',
                              type=float,
-                             default=0.,
+                             default=1.,
                              help='Sample expansion factor')
 
     args_parser.add_argument('--ignore-voxel-spacing',

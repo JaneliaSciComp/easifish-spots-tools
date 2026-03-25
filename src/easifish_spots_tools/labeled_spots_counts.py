@@ -83,7 +83,12 @@ def _define_args():
                              dest='output',
                              type=str,
                              required=True,
-                             help = "output file")
+                             help='Output file name')
+
+    args_parser.add_argument('--labeled-spots-output',
+                             dest='labeled_spots_output',
+                             type=str,
+                             help='Labeled spots output file name')
 
     args_parser.add_argument('--logging-config', dest='logging_config',
                              type=str,
@@ -147,6 +152,7 @@ def _get_spots_counts(args):
         spots_per_file[f] = np.round(spots_zyx).astype(int)
 
     spot_counts = pd.DataFrame()
+    labeled_spots = pd.DataFrame(columns=['label', 'x', 'y', 'z', 'vx', 'vy', 'vz', 'file'])
     # open labels image
     labels_zarr = open_array(args.labels_container, args.labels_dataset)
     _blockwise_spot_count(labels_zarr,
@@ -155,7 +161,8 @@ def _get_spots_counts(args):
                           processing_blocksize,
                           spots_per_file,
                           labels_voxel_spacing,
-                          spot_counts)
+                          spot_counts,
+                          labeled_spots)
 
     # drop rows where all file columns are zero
     if not spot_counts.empty:
@@ -165,6 +172,8 @@ def _get_spots_counts(args):
 
     logger.info(f'Writing {args.output}')
     spot_counts.to_csv(args.output, index_label='Label')
+    if args.labeled_spots_output:
+        labeled_spots.to_csv(args.labeled_spots_output, index_label='crt')
 
 
 def _blockwise_spot_count(labels_zarr:zarr.Array,
@@ -173,7 +182,8 @@ def _blockwise_spot_count(labels_zarr:zarr.Array,
                           blocksize,
                           spots_files, # mapping of file -> ndarray[int]
                           voxel_spacing,
-                          counts):
+                          counts,
+                          labeled_spots):
     """Count spots per label by reading one labels block at a time.
 
     Parameters
@@ -211,10 +221,12 @@ def _blockwise_spot_count(labels_zarr:zarr.Array,
         timeindex_and_channel = [0 for _ in range(len(labels_zarr.shape) - len(blocksize))]
 
     for block_index in np.ndindex(*nblocks):
+        if block_index[0] > 1:
+            break
         start = blocksize * np.array(block_index)
         stop = np.minimum(spatial_shape, start + blocksize)
         block_coords = tuple(timeindex_and_channel + [slice(int(s), int(e)) for s, e in zip(start, stop)])
-        logger.info(f'Reading labels block {block_index} / {tuple(nblocks)}: {block_coords}')
+        logger.info(f'Reading labels block {block_index} / {nblocks}: {block_coords}')
         block_labels = labels_zarr[block_coords]
         block_label_ids = np.unique(block_labels[block_labels != 0])
         logger.info(f'Block {block_index} ({block_labels.shape}) found {len(block_label_ids)} labels')
@@ -222,6 +234,7 @@ def _blockwise_spot_count(labels_zarr:zarr.Array,
 
         for f, spots_zyx in spots_files.items():
             r = os.path.splitext(os.path.basename(f))[0]
+            logger.info(f'Process spots from {r} for block {block_index} at {block_coords}')
             if r not in counts.columns:
                 counts[r] = 0
 
@@ -247,6 +260,17 @@ def _blockwise_spot_count(labels_zarr:zarr.Array,
                                 else (0,) * (len(block_labels.shape) - len(local_idx)) + tuple(local_idx))
                 try:
                     label = int(block_labels[label_coords])
+                    spot_physical_zyx = spot_zyx * voxel_spacing
+                    labeled_spots.loc[len(labeled_spots)] = {
+                        'label': label,
+                        'x': spot_physical_zyx[2],
+                        'y': spot_physical_zyx[1],
+                        'z': spot_physical_zyx[0],
+                        'vx': spot_zyx[2],
+                        'vy': spot_zyx[1],
+                        'vz': spot_zyx[0],
+                        'file': r,
+                    }
                     if label > 0:
                         if label not in counts.index:
                             counts.loc[label] = 0
