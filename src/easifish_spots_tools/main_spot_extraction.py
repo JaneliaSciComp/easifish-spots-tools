@@ -95,16 +95,16 @@ def _define_args():
                              dest='psf_file',
                              type=str,
                              help='numpy file that contains the PSF')
-    args_parser.add_argument('--psf-trim', '--psf_trim',
-                             dest='psf_trim',
-                             type=int,
-                             default=0,
-                             help='PSF trim value')
     args_parser.add_argument('--psf-retries', '--psf_retries',
                              dest='psf_retries',
                              type=int,
                              default=3,
                              help='PSF retries')
+    args_parser.add_argument('--psf-trim', '--psf_trim',
+                             dest='psf_trim',
+                             type=int,
+                             default=0,
+                             help='PSF trim value')
     args_parser.add_argument('--gaussian-sigma',
                              dest='gaussian_sigma',
                              type=float,
