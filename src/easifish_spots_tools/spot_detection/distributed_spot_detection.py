@@ -33,6 +33,7 @@ def distributed_spot_detection(
     mask=None,
     psf=None,
     psf_retries=3,
+    psf_trim=0,
 ):
     # set white_tophat defaults
     if 'radius' not in white_tophat_args:
@@ -153,6 +154,7 @@ def distributed_spot_detection(
         intensity_threshold=intensity_threshold,
         intensity_threshold_minimum=intensity_threshold_minimum,
         psf_retries=psf_retries,
+        psf_trim=psf_trim,
         array=image_data
     )
 
@@ -199,6 +201,7 @@ def _detect_block_spots(block_index, core_coords, overlap_coords, psf,
                         intensity_threshold=None,
                         intensity_threshold_minimum=0,
                         psf_retries=3,
+                        psf_trim=0,
                         array=[]):
     original_block = array[overlap_coords]
 
@@ -240,8 +243,15 @@ def _detect_block_spots(block_index, core_coords, overlap_coords, psf,
                 break
 
     if psf is not None:
-        logger.info(f'PSF {psf.shape} found for {core_coords} ({overlap_coords}) block')
-        decon = fs_filter.rl_decon(processed_block, psf, **deconvolution_args)
+        if psf_trim > 0:
+            # trim the PSF
+            trimmed_psf = psf[psf_trim:-psf_trim,
+                              psf_trim:-psf_trim,
+                              psf_trim:-psf_trim]
+        else:
+            trimmed_psf = psf
+        logger.info(f'PSF {trimmed_psf.shape} found for {core_coords} ({overlap_coords}) block')
+        decon = fs_filter.rl_decon(processed_block, trimmed_psf, **deconvolution_args)
     else:
         logger.info(f'No PSF could be estimated for {block.shape} block at {core_coords} ({overlap_coords})')
         decon = processed_block

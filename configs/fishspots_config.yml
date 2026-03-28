@@ -1,5 +1,5 @@
 white_tophat_args:
-  radius: 4
+  radius: 50
 
 psf_estimation_args:
   n_propose_model: 10
@@ -19,4 +19,3 @@ spot_detection_args:
   max_radius: 6
   num_sigma: 5
   threshold_rel: 0.1
-

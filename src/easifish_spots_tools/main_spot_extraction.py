@@ -179,11 +179,6 @@ def _main():
     psf_file = Path(args.psf_file) if args.psf_file else None
     if psf_file is not None and psf_file.exists() and psf_file.is_file():
         psf = _load_psf(psf_file)
-        if args.psf_trim > 0:
-            # trim the PSF
-            psf = psf[args.psf_trim:-args.psf_trim,
-                      args.psf_trim:-args.psf_trim,
-                      args.psf_trim:-args.psf_trim]
     else:
         psf = None
 
@@ -206,6 +201,7 @@ def _main():
         intensity_threshold_minimum=args.intensity_threshold_minimum,
         psf=psf,
         psf_retries=args.psf_retries,
+        psf_trim=args.psf_trim,
     )
 
     elapsed_time = time.time() - start_time
