@@ -95,6 +95,11 @@ def _define_args():
                              dest='psf_file',
                              type=str,
                              help='numpy file that contains the PSF')
+    args_parser.add_argument('--psf-trim', '--psf_trim',
+                             dest='psf_trim',
+                             type=int,
+                             default=0,
+                             help='PSF trim value')
     args_parser.add_argument('--psf-retries', '--psf_retries',
                              dest='psf_retries',
                              type=int,
@@ -174,6 +179,11 @@ def _main():
     psf_file = Path(args.psf_file) if args.psf_file else None
     if psf_file is not None and psf_file.exists() and psf_file.is_file():
         psf = _load_psf(psf_file)
+        if args.psf_trim > 0:
+            # trim the PSF
+            psf = psf[args.psf_trim:-args.psf_trim,
+                      args.psf_trim:-args.psf_trim,
+                      args.psf_trim:-args.psf_trim]
     else:
         psf = None
 
@@ -232,6 +242,10 @@ def _generate_spots_image(spots_zyx:np.ndarray,
     spatial_shape = image_shape[-3:]
     channels = np.unique(spots_zyx[:, 4].astype(int))
 
+    logger.info((
+        f'Resample detected spots from source image with a shape {spatial_shape} ({image_shape}) '
+        f'and spacing {input_voxel_spacing} to spacing {reference_voxel_spacing} '
+    ))
     for channel in channels:
         channel_spots = spots_zyx[spots_zyx[:, 4].astype(int) == channel]
         # create the spots image

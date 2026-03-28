@@ -231,6 +231,7 @@ def _detect_block_spots(block_index, core_coords, overlap_coords, psf,
             try:
                 psf = fs_psf.estimate_psf(wth_filtered_block, **psf_estimation_args)
             except ValueError as ve:
+                logger.warning(f'PSF estimate error using {psf_estimation_args}', exc_info=ve)
                 if 'inlier_threshold' not in psf_estimation_args:
                     psf_estimation_args['inlier_threshold'] = 0.9
 
@@ -247,7 +248,7 @@ def _detect_block_spots(block_index, core_coords, overlap_coords, psf,
 
     # final spot detection
     spots = fs_detect.detect_spots_log(decon, **spot_detection_args)
-    logger.info(f'Initial spots array shape: {spots.shape}')
+    logger.info(f'Spots detected using {spot_detection_args}: {spots.shape}')
 
     if spots.shape[0] == 0:
         # if no spots are found, ensure consistent format - z,y,x,intensity,sigma_x,sigma_y,sigma_z
@@ -262,6 +263,7 @@ def _detect_block_spots(block_index, core_coords, overlap_coords, psf,
         # get an intensity threshold
         if intensity_threshold is None:
             intensity_threshold = fs_filter.maximum_deviation_threshold(original_block, winsorize=(1, 99.995))
+            logger.info(f'Compare maximum deviation threshold: {intensity_threshold} with provided min value {intensity_threshold_minimum}')
             intensity_threshold = max(intensity_threshold, intensity_threshold_minimum)
         logger.info(f'Using intensity threshold: {intensity_threshold}')
 
@@ -279,6 +281,7 @@ def _detect_block_spots(block_index, core_coords, overlap_coords, psf,
                                 intensities[..., None],
                                 spots[:,3:]), axis=1)
         # filter by intensity (intensity_dim == 5)
+        logger.info(f'Filter out spots with a value <= {intensity_threshold}')
         spots = spots[ spots[..., 5] > intensity_threshold ]
 
         # adjust for block origin
