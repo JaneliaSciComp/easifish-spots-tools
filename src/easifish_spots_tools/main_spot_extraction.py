@@ -40,15 +40,13 @@ def _define_args():
                              help='Time index to process (if applicable)')
     args_parser.add_argument('--channels', '--included-channels',
                              dest='channels',
-                             type=int,
-                             nargs='+',
-                             default=[],
+                             type=inttuple,
+                             default=(),
                              help='List of channel indices to process')
     args_parser.add_argument('--excluded-channels',
                              dest='excluded_channels',
-                             type=int,
-                             nargs='+',
-                             default=[],
+                             type=inttuple,
+                             default=(),
                              help='List of channel indices to process')
     args_parser.add_argument('--output',
                              type=str,

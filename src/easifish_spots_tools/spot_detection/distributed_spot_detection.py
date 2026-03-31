@@ -10,7 +10,7 @@ import fishspot.detect as fs_detect
 from dask.distributed import as_completed
 from itertools import product
 from scipy.ndimage import gaussian_filter
-from typing import List
+from typing import List, Tuple
 
 
 logger = logging.getLogger(__name__)
@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 def distributed_spot_detection(
     image_data:zarr.Array,
     timeindex:int|None,
-    channels:List[int]|None,
+    channels:List[int]|Tuple[int]|None,
     excluded_channels:set[int]|None,
     blocksize,
     dask_client,
