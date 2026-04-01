@@ -250,10 +250,10 @@ def _detect_block_spots(block_index, core_coords, overlap_coords, psf,
                               psf_trim:-psf_trim]
         else:
             trimmed_psf = psf
-        logger.info(f'PSF {trimmed_psf.shape} found for {core_coords} ({overlap_coords}) block')
+        logger.info(f'PSF {trimmed_psf.shape} found for {core_coords} ({overlap_coords}) block {block_index}')
         decon = fs_filter.rl_decon(processed_block, trimmed_psf, **deconvolution_args)
     else:
-        logger.info(f'No PSF could be estimated for {block.shape} block at {core_coords} ({overlap_coords})')
+        logger.info(f'No PSF could be estimated for {block.shape} block {block_index} at {core_coords} ({overlap_coords})')
         decon = processed_block
 
     # final spot detection
@@ -274,11 +274,11 @@ def _detect_block_spots(block_index, core_coords, overlap_coords, psf,
         if intensity_threshold is None:
             intensity_threshold = fs_filter.maximum_deviation_threshold(original_block, winsorize=(1, 99.995))
             logger.info((
-                'Select intensity_threshold as maximum between '
+                f'Select intensity_threshold for block {block_index} as maximum between '
                 f'deviation threshold: {intensity_threshold} and intensity_threshold_minimum value {intensity_threshold_minimum}'
             ))
             intensity_threshold = max(intensity_threshold, intensity_threshold_minimum)
-        logger.info(f'Using intensity threshold: {intensity_threshold}')
+        logger.info(f'Block {block_index} - using intensity threshold: {intensity_threshold}')
 
         # spots shape -> (n_spots, 6) [[z, y, x, sigma_z, sigma_y, sigma_x]]
         # append image intensities
