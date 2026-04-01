@@ -268,12 +268,15 @@ def _detect_block_spots(block_index, core_coords, overlap_coords, psf,
         core_origin = [x.start-y.start for x, y in zip(core_coords[-3:], overlap_coords[-3:])]
         span = [x.stop-x.start for x in core_coords[-3:]]
         spots = fs_filter.filter_by_range(spots, core_origin, span)
-        logger.info(f'Spots array shape after overlap removal: {spots.shape}')
+        logger.info(f'Spots array shape after overlap removal of overlap {overlap_coords} from {core_coords}: {spots.shape}')
 
         # get an intensity threshold
         if intensity_threshold is None:
             intensity_threshold = fs_filter.maximum_deviation_threshold(original_block, winsorize=(1, 99.995))
-            logger.info(f'Compare maximum deviation threshold: {intensity_threshold} with provided min value {intensity_threshold_minimum}')
+            logger.info((
+                'Select intensity_threshold as maximum between '
+                f'deviation threshold: {intensity_threshold} and intensity_threshold_minimum value {intensity_threshold_minimum}'
+            ))
             intensity_threshold = max(intensity_threshold, intensity_threshold_minimum)
         logger.info(f'Using intensity threshold: {intensity_threshold}')
 
