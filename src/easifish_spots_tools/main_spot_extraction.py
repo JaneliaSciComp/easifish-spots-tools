@@ -6,7 +6,7 @@ import time
 from dask.distributed import (Client, LocalCluster)
 from pathlib import Path
 
-from zarr_tools.ngff.ngff_utils import get_spatial_voxel_spacing
+from zarr_tools.ngff.ngff_utils import get_spatial_dataset_voxel_spacing
 
 from .cli import floattuple, inttuple
 from .io_utils.read_utils import open_array, read_array_attrs
@@ -151,14 +151,16 @@ def _main():
     cluster_client.register_plugin(worker_config, name='WorkerConfig')
 
     input_image_attrs = read_array_attrs(args.input, args.input_subpath)
+    logger.info(f'Input image {args.input}:{args.input_subpath} attributes {input_image_attrs}')
     input_image_shape = input_image_attrs['array_shape']
 
     if args.voxel_spacing is not None:
         # voxel spacing is specified in the command line, so use this value
         voxel_spacing = np.array(args.voxel_spacing[::-1]) # this is specified as XYZ and we want it as ZYX
+        logger.info(f'Voxel spacing argument: {voxel_spacing}')
     else:
-        voxel_spacing = get_spatial_voxel_spacing(input_image_attrs)
-
+        voxel_spacing = get_spatial_dataset_voxel_spacing(input_image_attrs, args.input_subpath)
+        logger.info(f'Voxel spacing for dataset {args.input_subpath}: {voxel_spacing}')
 
     if args.blocksize:
         # convert the x,y,z input block size to z,y,x
@@ -218,8 +220,11 @@ def _main():
                                    if args.spots_dataset_subpath_reference
                                    else args.input_subpath)
         spots_reference_image_attrs = read_array_attrs(args.input, spots_dataset_reference)
+        logger.info(f'Ref image {args.input}:{spots_dataset_reference} attributes {spots_reference_image_attrs}')
+
         spots_image_shape = spots_reference_image_attrs['array_shape']
-        spots_reference_voxel_spacing = get_spatial_voxel_spacing(spots_reference_image_attrs)
+        spots_reference_voxel_spacing = get_spatial_dataset_voxel_spacing(spots_reference_image_attrs, spots_dataset_reference)
+        logger.info(f'Reference dataset {spots_dataset_reference} spacing: {spots_reference_voxel_spacing}')
 
         output_spots_image = Path(args.output).parent / args.output_spots_image_name
 

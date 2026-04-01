@@ -121,8 +121,7 @@ def _get_spots_counts(args):
 
     if labels_voxel_spacing is not None:
         if args.expansion_factor > 0:
-            expansion = args.expansion_factor
-            labels_voxel_spacing /= expansion
+            labels_voxel_spacing = tuple(s / args.expansion_factor for s in labels_voxel_spacing)
     else:
         labels_voxel_spacing = (1,) * 3
 

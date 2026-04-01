@@ -233,8 +233,8 @@ def _detect_block_spots(block_index, core_coords, overlap_coords, psf,
         for i in range(psf_retries):
             try:
                 psf = fs_psf.estimate_psf(wth_filtered_block, **psf_estimation_args)
-            except ValueError as ve:
-                logger.warning(f'PSF estimate error using {psf_estimation_args}', exc_info=ve)
+            except ValueError as _:
+                logger.warning(f'PSF estimate error after {i+1} trial(s) using {psf_estimation_args}')
                 if 'inlier_threshold' not in psf_estimation_args:
                     psf_estimation_args['inlier_threshold'] = 0.9
 
