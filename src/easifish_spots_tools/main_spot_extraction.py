@@ -116,6 +116,12 @@ def _define_args():
                              type=int,
                              default=0,
                              help='Intensity threshold minimum for spot detection')
+    args_parser.add_argument('--intensity-threshold-percentiles',
+                             dest='intensity_threshold_percentiles',
+                             type=floattuple,
+                             metavar="LOW_PERCENTILE,HIGH_PERCENTILE",
+                             default=(1, 99),
+                             help='Winsorize percentile range as two floats (lower upper), default: 1 99')
 
     args_parser.add_argument('--logging-config', dest='logging_config',
                              type=str,
@@ -184,6 +190,15 @@ def _main():
 
     start_time = time.time()
 
+    intensity_threshold_percentiles = args.intensity_threshold_percentiles
+    if len(intensity_threshold_percentiles) != 2 or any(
+        percentile < 0 or percentile > 100
+        for percentile in intensity_threshold_percentiles
+    ):
+        raise ValueError(
+            "args.intensity_threshold_percentiles must contain exactly 2 percentage values in [0, 100]"
+        )
+
     # get all spots as zyx
     spots_zyx, _ = distributed_spot_detection(
         input_image_array,
@@ -199,6 +214,7 @@ def _main():
         gaussian_sigma=args.gaussian_sigma,
         intensity_threshold=args.intensity_threshold,
         intensity_threshold_minimum=args.intensity_threshold_minimum,
+        intensity_thresold_winsorize=intensity_threshold_percentiles,
         psf=psf,
         psf_retries=args.psf_retries,
         psf_trim=args.psf_trim,

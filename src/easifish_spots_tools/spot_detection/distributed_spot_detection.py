@@ -30,6 +30,7 @@ def distributed_spot_detection(
     gaussian_sigma:float|None=None,
     intensity_threshold=None,
     intensity_threshold_minimum=0,
+    intensity_thresold_winsorize=(1,99),
     mask=None,
     psf=None,
     psf_retries=3,
@@ -153,6 +154,7 @@ def distributed_spot_detection(
         gaussian_sigma=gaussian_sigma,
         intensity_threshold=intensity_threshold,
         intensity_threshold_minimum=intensity_threshold_minimum,
+        intensity_thresold_winsorize=intensity_thresold_winsorize,
         psf_retries=psf_retries,
         psf_trim=psf_trim,
         array=image_data
@@ -200,6 +202,7 @@ def _detect_block_spots(block_index, core_coords, overlap_coords, psf,
                         gaussian_sigma=None,
                         intensity_threshold=None,
                         intensity_threshold_minimum=0,
+                        intensity_thresold_winsorize=(1, 99),
                         psf_retries=3,
                         psf_trim=0,
                         array=[]):
