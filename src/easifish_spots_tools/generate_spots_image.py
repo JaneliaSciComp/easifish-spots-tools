@@ -17,7 +17,7 @@ logger:logging.Logger
 def _define_args():
     args_parser = argparse.ArgumentParser()
 
-    args_parser.add_argument('--spots-image',
+    args_parser.add_argument('--spots-source-image',
                              dest='spots_source_image',
                              type=str,
                              help='Path to the image container from which the spots were extracted')
@@ -31,13 +31,19 @@ def _define_args():
                              type=floattuple,
                              help='Spots image voxel spacing')
 
+    args_parser.add_argument('--expansion',
+                             dest='expansion',
+                             type=float,
+                             default=1.0,
+                             help='Spots volume expansion')
+
     args_parser.add_argument('--spots-file', '--spots_file',
                              dest='spots_file',
                              type=str,
                              required=True,
                              help='Spots image voxel spacing')
 
-    args_parser.add_argument('--output-image',
+    args_parser.add_argument('--spots-output-image',
                              dest='spots_output_image',
                              type=str,
                              required=True,
@@ -70,7 +76,7 @@ def _main():
     logger.info(f'Generate spots image with: {args}')
 
     spots_source_image_attrs = read_array_attrs(args.spots_source_image, args.spots_source_subpath)
-    logger.info(f'Input image {args.spots_image}:{args.spots_subpath} attributes {spots_source_image_attrs}')
+    logger.info(f'Input image {args.spots_source_image}:{args.spots_source_subpath} attributes {spots_source_image_attrs}')
     spots_source_image_shape = spots_source_image_attrs['array_shape']
 
     if args.voxel_spacing is not None:
@@ -79,13 +85,13 @@ def _main():
         logger.info(f'Voxel spacing argument: {voxel_spacing}')
     else:
         voxel_spacing = get_spatial_dataset_voxel_spacing(spots_source_image_attrs, args.spots_source_subpath)
-        logger.info(f'Voxel spacing for dataset {args.spots_subpath}: {voxel_spacing}')
+        logger.info(f'Voxel spacing for dataset {args.spots_source_subpath}: {voxel_spacing}')
 
     spots_dataset_reference = (args.spots_image_subpath_reference
                                if args.spots_image_subpath_reference
                                else args.spots_source_image_subpath)
     spots_reference_image_attrs = read_array_attrs(args.spots_source_image, spots_dataset_reference)
-    logger.info(f'Ref image {args.input}:{spots_dataset_reference} attributes {spots_reference_image_attrs}')
+    logger.info(f'Ref image {args.spots_source_image}:{spots_dataset_reference} attributes {spots_reference_image_attrs}')
 
     spots_image_shape = spots_reference_image_attrs['array_shape']
     spots_reference_voxel_spacing = get_spatial_dataset_voxel_spacing(spots_reference_image_attrs, spots_dataset_reference)
@@ -95,11 +101,11 @@ def _main():
     logger.info((
         f'Resample spots at {args.spots_source_subpath} from {spots_source_image_shape} image with spacing {voxel_spacing} '
         f'to {spots_dataset_reference} with shape {spots_image_shape} and spacing {spots_reference_voxel_spacing}'))
-    spots_zyx = spots_xyz[:, :3][:, ::-1] / voxel_spacing * spots_reference_voxel_spacing
+    spots_zyx = spots_xyz[:, :3][:, ::-1] / spots_reference_voxel_spacing * args.expansion
 
     output_spots_image = Path(args.spots_output_image)
 
-    _generate_spots_image(spots_zyx, spots_source_image_shape, output_spots_image)
+    _generate_spots_image(spots_zyx, spots_image_shape, output_spots_image)
 
 
 def _read_spots(spots_file):
@@ -131,7 +137,7 @@ def _generate_spots_image(voxel_spots_zyx:np.ndarray,
                     coord[1]-1:coord[1]+1,
                     coord[2]-1:coord[2]+1] += 1
 
-    logger.info(f'Writing spots image to {output_path}')
+    logger.info(f'Writing spots to {spatial_shape} image to {output_path}')
     output_path.parent.mkdir(parents=True, exist_ok=True)
     nrrd.write(str(output_path), spots_image.transpose(2,1,0), compression_level=2)
 
