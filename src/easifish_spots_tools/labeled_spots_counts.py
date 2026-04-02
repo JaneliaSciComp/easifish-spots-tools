@@ -54,24 +54,24 @@ def _define_args():
     args_parser.add_argument('--expansion-factor', '--expansion_factor',
                              dest='expansion_factor',
                              type=float,
-                             default=0.,
+                             default=1,
                              help='Sample expansion factor')
 
     args_parser.add_argument('--spots-pattern',
                              dest='spots_pattern',
                              type=str,
                              required=True,
-                             help = "Glob pattern for spots files")
+                             help='Glob pattern for spots files')
 
     args_parser.add_argument('--timeindex',
                              dest='labels_timeindex',
                              type=int,
-                             help = "Time index from the labels OME ZARR used for spots counting")
+                             help='Time index from the labels OME ZARR used for spots counting')
 
     args_parser.add_argument('--channel',
                              dest='labels_channel',
                              type=int,
-                             help = "Channel index from the labels OME ZARR used for spots counting")
+                             help='Channel index from the labels OME ZARR used for spots counting')
 
     args_parser.add_argument('--processing-blocksize',
                              dest='processing_blocksize',
@@ -105,25 +105,42 @@ def _get_spots_counts(args):
     Aggregates all files containing spot counts files that match the pattern
     into an output csv file
     """
+    labels_attrs = read_array_attrs(args.labels_container, args.labels_dataset)
+    labels_shape = labels_attrs['array_shape']
+    logger.info(f'Labels image {args.labels_container} {args.labels_dataset} shape: {labels_shape}')
+
     if args.labels_voxel_spacing:
         labels_voxel_spacing = np.array(args.labels_voxel_spacing)
+        logger.info(f'Labels voxel spacing from arg: {labels_voxel_spacing}')
     else:
-        labels_attrs = read_array_attrs(args.labels_container, args.labels_dataset)
         # get label voxel spacing from labels image attributes
         labels_voxel_spacing = get_spatial_dataset_voxel_spacing(labels_attrs, args.labels_dataset)
+        logger.info((
+            f'Labels voxel spacing from labels container {args.labels_container} '
+            f'and labels dataset {args.labels_dataset}: {labels_voxel_spacing}'
+        ))
 
     if labels_voxel_spacing is None:
         # the segmentation image does not have information about the voxel spacing
         # try to get that info from the image
         image_attrs = read_array_attrs(args.image_container, args.image_dataset)
-        # get label voxel spacing from labels image attributes
-        labels_voxel_spacing = get_spatial_dataset_voxel_spacing(image_attrs, args.image_dataset)
+        image_voxel_spacing = np.array(get_spatial_dataset_voxel_spacing(image_attrs, args.image_dataset))
+        logger.info((
+            f'Spots source voxel spacing from image container {args.image_container} '
+            f'and labels dataset {args.image_dataset}: {image_voxel_spacing}'
+        ))
+        image_shape = np.array(image_attrs['array_shape'])
+        labels_voxel_spacing = image_voxel_spacing  * image_shape / np.array(labels_shape)
+        logger.info((
+            f'Labels voxel spacing from image and labels shapes {image_shape} / {labels_shape} '
+            f'is {labels_voxel_spacing} '
+        ))
 
     if labels_voxel_spacing is not None:
         if args.expansion_factor > 0:
-            labels_voxel_spacing = tuple(s / args.expansion_factor for s in labels_voxel_spacing)
+            labels_voxel_spacing = np.array(labels_voxel_spacing) / args.expansion_factor
     else:
-        labels_voxel_spacing = (1,) * 3
+        labels_voxel_spacing = np.array((1,) * 3)
 
     logger.info(f'Labels voxel spacing at {args.labels_dataset}: {labels_voxel_spacing}')
 
@@ -220,8 +237,6 @@ def _blockwise_spot_count(labels_zarr:zarr.Array,
         timeindex_and_channel = [0 for _ in range(len(labels_zarr.shape) - len(blocksize))]
 
     for block_index in np.ndindex(*nblocks):
-        if block_index[0] > 1:
-            break
         start = blocksize * np.array(block_index)
         stop = np.minimum(spatial_shape, start + blocksize)
         block_coords = tuple(timeindex_and_channel + [slice(int(s), int(e)) for s, e in zip(start, stop)])
