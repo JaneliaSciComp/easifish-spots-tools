@@ -165,7 +165,7 @@ def _get_spots_counts(args):
         # CSV columns are x,y,z — convert to z,y,x and scale to voxel space
         spots_zyx = spots[:, :3][:, ::-1] / labels_voxel_spacing
         # round the zyx coordinates to the nearest int
-        spots_per_file[f] = np.round(spots_zyx).astype(int)
+        spots_per_file[f] = np.round(spots_zyx).astype(np.uint32)
 
     spot_counts = pd.DataFrame()
     labeled_spots = pd.DataFrame(columns=['label', 'x', 'y', 'z', 'vx', 'vy', 'vz', 'file'])

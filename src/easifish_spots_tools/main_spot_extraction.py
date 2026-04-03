@@ -53,6 +53,20 @@ def _define_args():
                              required=True,
                              help='Path to the output file')
 
+    args_parser.add_argument('--mask',
+                             dest='mask',
+                             type=str,
+                             help = "Mask directory")
+    args_parser.add_argument('--mask-subpath', '--mask_subpath',
+                             dest='mask_subpath',
+                             type=str,
+                             help = "mask subpath")
+    args_parser.add_argument('--roi',
+                             dest='roi',
+                             type=inttuple,
+                             metavar='xmin,ymin,zmin,xmax,ymax,zmax',
+                             help='Volume ROI as 6 integers: xmin ymin zmin xmax ymax zmax')
+
     args_parser.add_argument('--output-spots-imagename',
                              dest='output_spots_image_name',
                              type=str,
@@ -80,8 +94,10 @@ def _define_args():
                              type=int, default=0,
                              help='Number of cpus allocated to a dask worker')
 
-    args_parser.add_argument('--blocksize',
+    args_parser.add_argument('--blocksize', '--process-blocksize',
+                             dest='process_blocksize',
                              type=inttuple,
+                             metavar='SX,SY,SZ',
                              default=(),
                              help='Block size as [x,y,z] size')
 
@@ -168,13 +184,20 @@ def _main():
         voxel_spacing = get_spatial_dataset_voxel_spacing(input_image_attrs, args.input_subpath)
         logger.info(f'Voxel spacing for dataset {args.input_subpath}: {voxel_spacing}')
 
-    if args.blocksize:
+    if args.process_blocksize:
         # convert the x,y,z input block size to z,y,x
-        processing_blocksize = args.blocksize[::-1]
+        processing_blocksize = args.process_blocksize[::-1]
     else:
         processing_blocksize = input_image_shape[-3:]
 
     input_image_array = open_array(input_image_attrs['array_storepath'], input_image_attrs['array_subpath'])
+
+    if args.mask and Path(args.mask).exists():
+        # read the mask
+        logger.info(f'Read foreground mask from {args.mask}:{args.mask_subpath}')
+        mask = open_array(args.mask, args.mask_subpath)
+    else:
+        mask=None
 
     fishspots_config = get_fishspots_config(args.fishspots_config)
     white_tophat_args=fishspots_config.get('white_tophat_args', {})
@@ -199,6 +222,15 @@ def _main():
             "args.intensity_threshold_percentiles must contain exactly 2 percentage values in [0, 100]"
         )
 
+    # convert ROI from CLI xyz order to internal zyx order: [x0,y0,z0,x1,y1,z1] -> [z0,y0,x0,z1,y1,x1]
+    if args.roi is not None:
+        r = args.roi
+        if len(r) != 6:
+            raise ValueError(f'ROI ({args.roi}) expected to have 6 values xmin,ymin,zmin,xmax,ymax,zmax')
+        roi = np.array([r[2], r[1], r[0], r[5], r[4], r[3]])
+    else:
+        roi = None
+
     # get all spots as zyx
     spots_zyx, _ = distributed_spot_detection(
         input_image_array,
@@ -215,6 +247,8 @@ def _main():
         intensity_threshold=args.intensity_threshold,
         intensity_threshold_minimum=args.intensity_threshold_minimum,
         intensity_thresold_winsorize=intensity_threshold_percentiles,
+        mask=mask,
+        roi=roi,
         psf=psf,
         psf_retries=args.psf_retries,
         psf_trim=args.psf_trim,
@@ -222,6 +256,9 @@ def _main():
 
     elapsed_time = time.time() - start_time
     logger.info(f'Distributed spot detection completed in {elapsed_time:.2f} seconds')
+
+    # sort the results by t,c,z,y,x
+    spots_zyx = spots_zyx[np.lexsort((spots_zyx[:, 2], spots_zyx[:, 1], spots_zyx[:, 0], spots_zyx[:, 4], spots_zyx[:, 3]))] 
 
     # z,y,x -> x,y,z
     spots_xyz = np.copy(spots_zyx)

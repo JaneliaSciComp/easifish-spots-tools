@@ -32,6 +32,7 @@ def distributed_spot_detection(
     intensity_threshold_minimum=0,
     intensity_thresold_winsorize=(1,99),
     mask=None,
+    roi=None,
     psf=None,
     psf_retries=3,
     psf_trim=0,
@@ -89,12 +90,23 @@ def distributed_spot_detection(
         excluded_spots_channels = excluded_channels
     else:
         excluded_spots_channels = ()
-    
 
     # compute mask to array ratio
     if mask is not None:
         ratio = np.array(mask.shape) / spatial_shape
         stride = np.round(blocksize * ratio).astype(int)
+    else:
+        # these values are equivalent to not being used
+        ratio = 0
+        stride = 0
+
+    # precompute ROI bounds from flat 6-element array [z0, y0, x0, z1, y1, x1]
+    if roi is not None:
+        roi = np.asarray(roi)
+        roi_start = roi[:3]
+        roi_stop = roi[3:]
+    else:
+        roi_start = roi_stop = None
 
     # compute number of blocks
     nblocks = np.ceil(np.array(spatial_shape) / blocksize).astype(int)
@@ -113,6 +125,13 @@ def distributed_spot_detection(
                     mo = stride * (i, j, k)
                     mask_slice = tuple(slice(x, x+y) for x, y in zip(mo, stride))
                     if not np.any(mask[mask_slice]):
+                        continue
+
+                # skip blocks that don't overlap with the ROI
+                if roi is not None:
+                    block_start = np.array(blocksize) * (i, j, k)
+                    block_stop = np.minimum(spatial_shape, block_start + blocksize)
+                    if not (np.all(block_start < roi_stop) and np.all(block_stop >= roi_start)):
                         continue
 
                 # create overlap coords and append to list
@@ -142,7 +161,7 @@ def distributed_spot_detection(
                 overlap_coords.append(tuple(extended_coords))
                 psfs.append(psf)
 
-    logger.info(f'Partition an {spatial_shape} volume into {len(core_coords)} ({nblocks}) {blocksize} blocks for spot detection')
+    logger.info(f'Partition a {spatial_shape} volume into {len(core_coords)} foreground blocks out of {nblocks} for spot detection with blocksize {blocksize}')
 
     # submit all alignments to cluster
     detect_block_spots = functools.partial(

@@ -15,8 +15,10 @@ deconvolution_args:
   filter_epsilon: 0.000001
 
 spot_detection_args:
-  min_radius: [0.5,0.5,0.5]
-  max_radius: [6,6,6]
-  num_sigma: 10
-  threshold_rel: 0.001
+  min_radius: [1.5,1.5,1.5]
+  max_radius: [2,2,2]
+  min_sigma: [0.86, 0.86, 0.86]
+  max_sigma: [1.155, 1.155, 1.155]
+  num_sigma: 5
+  threshold_rel: 0.09
   exclude_border: 0
