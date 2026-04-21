@@ -284,12 +284,24 @@ def _blockwise_region_props(labels_zarr, image_zarr, dapi_zarr,
         unique_labels = unique_labels[unique_labels != 0]
         logger.info(f'Block {block_index} ({labels_block.shape}) found {len(unique_labels)} labels')
 
+        # Build coordinate grids offset by block start position (ZYX)
+        block_shape = labels_block.shape
+        coords = np.mgrid[
+            start[0]:start[0]+block_shape[0],
+            start[1]:start[1]+block_shape[1],
+            start[2]:start[2]+block_shape[2],
+        ]  # shape (3, Z, Y, X)
+
         for label in unique_labels:
             mask = labels_block == label
             if label not in accumulator:
-                accumulator[label] = [0, 0]
+                # [sum_intensity, pixel_count, sum_z, sum_y, sum_x]
+                accumulator[label] = [0.0, 0, 0.0, 0.0, 0.0]
             accumulator[label][0] += image_block[mask].astype('float32').sum()
             accumulator[label][1] += mask.sum()
+            accumulator[label][2] += coords[0][mask].sum()
+            accumulator[label][3] += coords[1][mask].sum()
+            accumulator[label][4] += coords[2][mask].sum()
 
     return accumulator
 
@@ -350,8 +362,19 @@ def _extract_spots_region_properties(args):
     )
 
     voxel_volume = np.prod(voxel_spacing)
-    rows = [(label, s / n, n * voxel_volume) for label, (s, n) in accumulator.items()]
-    df = pd.DataFrame(rows, columns=['roi', 'mean_intensity', 'area'])
+    # voxel_spacing is in ZYX order
+    rows = [
+        (label,
+         (sx / n) * voxel_spacing[2],
+         (sy / n) * voxel_spacing[1],
+         (sz / n) * voxel_spacing[0],
+         s / n, n * voxel_volume)
+        for label, (s, n, sz, sy, sx) in accumulator.items()
+    ]
+    df = pd.DataFrame(rows, columns=[
+        'roi', 'centroid_x', 'centroid_y', 'centroid_z',
+        'mean_intensity', 'area',
+    ])
     df.sort_values('roi', inplace=True)
 
     logger.info(f'Writing {args.output}')
