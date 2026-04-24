@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "easifish-spots-tools"
-version = "0.4.0"
+version = "0.5.0"
 description = "EASI-FISH pipeline tools for detecting or processing spots "
 license = "BSD-3-Clause"
 requires-python = ">=3.12"
