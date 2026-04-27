@@ -254,7 +254,12 @@ def _get_spots_counts(args):
     logger.info(f'Writing {args.output}')
     spot_counts.to_csv(args.output, index_label='Label')
     if args.labeled_spots_output:
-        labeled_spots.to_csv(args.labeled_spots_output, index_label='crt')
+        labeled_spots_output = Path(args.labeled_spots_output)
+        if not labeled_spots_output.is_absolute():
+            labeled_spots_output = Path(args.output).parent / labeled_spots_output
+        labeled_spots.to_csv(labeled_spots_output, index_label='crt')
+
+    cluster_client.close
 
 
 def _process_block(block_index,
@@ -275,16 +280,14 @@ def _process_block(block_index,
         block_counts : dict of {file_stem: {label_id: count}}
         block_labeled_spots : list of dicts with spot info
     """
-    wlogger = logging.getLogger('dask_worker')
-
     block_coords = tuple(
         timeindex_and_channel
         + [slice(int(s), int(e)) for s, e in zip(start, stop)]
     )
-    wlogger.info(f'Reading labels block {block_index}: {block_coords}')
+    logger.info(f'Reading labels block {block_index}: {block_coords}')
     block_labels = labels_zarr[block_coords]
     block_label_ids = np.unique(block_labels[block_labels != 0])
-    wlogger.info(f'Block {block_index} ({block_labels.shape}) found {len(block_label_ids)} labels')
+    logger.info(f'Block {block_index} ({block_labels.shape}) found {len(block_label_ids)} labels')
     spatial_block_shape = block_labels.shape[-3:]
 
     block_counts = {}  # {file_stem: {label_id: count}}
@@ -292,12 +295,12 @@ def _process_block(block_index,
 
     for f, spots_zyx in spots_files.items():
         r = os.path.splitext(os.path.basename(f))[0]
-        wlogger.info(f'Process spots from {r} for block {block_index} at {block_coords}')
+        logger.info(f'Process spots from {r} for block {block_index} at {block_coords}')
 
         # filter spots that fall within this block's [start, stop) range
         in_block = np.all((spots_zyx >= start) & (spots_zyx < stop), axis=1)
         block_spots_zyx = spots_zyx[in_block]
-        wlogger.info(f'Block {block_index} file {r}: {len(block_spots_zyx)} spots')
+        logger.info(f'Block {block_index} file {r}: {len(block_spots_zyx)} spots')
 
         file_counts = {}
 
@@ -306,7 +309,7 @@ def _process_block(block_index,
                 continue
             local_idx = spot_zyx - start
             if np.any(local_idx < 0) or np.any(local_idx > spatial_block_shape):
-                wlogger.warning((
+                logger.warning((
                     f'Block {block_index} at {block_coords} '
                     f'unexpected out of bounds for {spot_zyx} ({spot_zyx * voxel_spacing}) -> {local_idx} '
                 ))
@@ -330,11 +333,11 @@ def _process_block(block_index,
                 if label > 0:
                     file_counts[label] = file_counts.get(label, 0) + 1
             except Exception as e:
-                wlogger.exception(f'Error looking up label at {spot_zyx} ({label_coords}): {e}')
+                logger.exception(f'Error looking up label at {spot_zyx} ({label_coords}): {e}')
 
         block_counts[r] = file_counts
 
-    wlogger.info(f'Completed block {block_index}')
+    logger.info(f'Completed block {block_index}')
     return block_index, block_counts, block_labeled_spots
 
 

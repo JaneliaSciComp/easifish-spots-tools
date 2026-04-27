@@ -289,12 +289,10 @@ def _process_region_props_block(block_index, start, stop,
     tuple of (block_index, block_accumulator)
         block_accumulator : dict of {label_id: [sum_intensity, pixel_count, sum_z, sum_y, sum_x]}
     """
-    wlogger = logging.getLogger('dask_worker')
-
     spatial_slices = [slice(int(s), int(e)) for s, e in zip(start, stop)]
     labels_coords = tuple(labels_prefix + spatial_slices)
     image_coords = tuple(image_prefix + spatial_slices)
-    wlogger.info(f'Reading block {block_index}: {labels_coords}')
+    logger.info(f'Reading block {block_index}: {labels_coords}')
 
     labels_block = labels_zarr[labels_coords]
     image_block = image_zarr[image_coords]
@@ -306,9 +304,19 @@ def _process_region_props_block(block_index, start, stop,
             0, image_block.astype('float32') - bg_img - dapi_factor * (dapi_block - bg_dapi)
         )
 
+    # Trim to common spatial shape in case image and labels have different extents
+    common_shape = tuple(
+        min(labels_block.shape[i], image_block.shape[i])
+        for i in range(3)
+    )
+    if labels_block.shape != common_shape:
+        labels_block = labels_block[:common_shape[0], :common_shape[1], :common_shape[2]]
+    if image_block.shape != common_shape:
+        image_block = image_block[:common_shape[0], :common_shape[1], :common_shape[2]]
+
     unique_labels = np.unique(labels_block)
     unique_labels = unique_labels[unique_labels != 0]
-    wlogger.info(f'Block {block_index} ({labels_block.shape}) found {len(unique_labels)} labels')
+    logger.info(f'Block {block_index} ({labels_block.shape}) found {len(unique_labels)} labels')
 
     # Build coordinate grids offset by block start position (ZYX)
     block_shape = labels_block.shape
@@ -496,6 +504,9 @@ def _extract_spots_region_properties(args):
 
     labels_prefix = _build_timeindex_prefix(labels_zarr, args.labels_timeindex, args.labels_channel)
     image_prefix = _build_timeindex_prefix(image_zarr, args.image_timeindex, args.image_channel)
+
+    logger.info(f'Labels prefix: {labels_prefix}')
+    logger.info(f'Image prefix: {image_prefix}')
 
     bleed_params = None
     dapi_zarr = None
