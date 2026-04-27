@@ -275,7 +275,7 @@ def _process_block(block_index,
         block_counts : dict of {file_stem: {label_id: count}}
         block_labeled_spots : list of dicts with spot info
     """
-    wlogger = logger #logging.getLogger('dask_worker')
+    wlogger = logging.getLogger('dask_worker')
 
     block_coords = tuple(
         timeindex_and_channel

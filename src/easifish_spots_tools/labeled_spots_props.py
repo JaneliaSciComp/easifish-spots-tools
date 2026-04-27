@@ -1,11 +1,16 @@
 import argparse
+import functools
 import logging
 import numpy as np
 import pandas as pd
+
+from dask.distributed import (Client, LocalCluster, as_completed)
+from pathlib import Path
 from zarr_tools.ngff.ngff_utils import get_spatial_voxel_spacing
 
 from .cli import floattuple, inttuple
 from .io_utils.read_utils import open_array, read_array_attrs
+from .utils.configure_dask import (ConfigureWorkerPlugin, load_dask_config)
 from .utils.configure_logging import configure_logging
 
 
@@ -77,6 +82,37 @@ def _define_args():
                              dest='bleeding_channel',
                              type=int,
                              help = "Bleeding channel")
+
+    args_parser.add_argument('--mask',
+                             dest='mask',
+                             type=str,
+                             help = "Mask directory")
+    args_parser.add_argument('--mask-subpath', '--mask_subpath',
+                             dest='mask_subpath',
+                             type=str,
+                             help = "mask subpath")
+    args_parser.add_argument('--roi',
+                             dest='roi',
+                             type=inttuple,
+                             metavar='xmin,ymin,zmin,xmax,ymax,zmax',
+                             help='Volume ROI as 6 integers: xmin ymin zmin xmax ymax zmax')
+
+    args_parser.add_argument('--dask-scheduler',
+                             dest='dask_scheduler',
+                             type=str,
+                             default=None,
+                             help='Run with distributed scheduler')
+    args_parser.add_argument('--dask-config', dest='dask_config',
+                             type=str, default=None,
+                             help='YAML file containing dask configuration')
+    args_parser.add_argument('--local-dask-workers', '--local_dask_workers',
+                             dest='local_dask_workers',
+                             type=int,
+                             help='Number of workers when using a local cluster')
+    args_parser.add_argument('--worker-cpus',
+                             dest='worker_cpus',
+                             type=int, default=0,
+                             help='Number of cpus allocated to a dask worker')
 
     args_parser.add_argument('--processing-blocksize',
                              dest='processing_blocksize',
@@ -239,10 +275,70 @@ def _compute_bleed_correction_params(image_zarr, dapi_zarr,
     return bg_img, bg_dapi, lo, dapi_factor
 
 
+def _process_region_props_block(block_index, start, stop,
+                                labels_prefix, image_prefix, dapi_prefix,
+                                bleed_params,
+                                labels_zarr, image_zarr, dapi_zarr):
+    """Process a single block for region properties.
+
+    This function runs on dask workers. It reads labels and image blocks,
+    applies optional bleed correction, and returns per-label accumulations.
+
+    Returns
+    -------
+    tuple of (block_index, block_accumulator)
+        block_accumulator : dict of {label_id: [sum_intensity, pixel_count, sum_z, sum_y, sum_x]}
+    """
+    wlogger = logging.getLogger('dask_worker')
+
+    spatial_slices = [slice(int(s), int(e)) for s, e in zip(start, stop)]
+    labels_coords = tuple(labels_prefix + spatial_slices)
+    image_coords = tuple(image_prefix + spatial_slices)
+    wlogger.info(f'Reading block {block_index}: {labels_coords}')
+
+    labels_block = labels_zarr[labels_coords]
+    image_block = image_zarr[image_coords]
+
+    if bleed_params is not None:
+        bg_img, bg_dapi, _, dapi_factor = bleed_params
+        dapi_block = dapi_zarr[tuple(dapi_prefix + spatial_slices)].astype('float32')
+        image_block = np.maximum(
+            0, image_block.astype('float32') - bg_img - dapi_factor * (dapi_block - bg_dapi)
+        )
+
+    unique_labels = np.unique(labels_block)
+    unique_labels = unique_labels[unique_labels != 0]
+    wlogger.info(f'Block {block_index} ({labels_block.shape}) found {len(unique_labels)} labels')
+
+    # Build coordinate grids offset by block start position (ZYX)
+    block_shape = labels_block.shape
+    coords = np.mgrid[
+        start[0]:start[0]+block_shape[0],
+        start[1]:start[1]+block_shape[1],
+        start[2]:start[2]+block_shape[2],
+    ]  # shape (3, Z, Y, X)
+
+    block_accumulator = {}
+    for label in unique_labels:
+        label_mask = labels_block == label
+        block_accumulator[label] = [
+            float(image_block[label_mask].astype('float32').sum()),
+            int(label_mask.sum()),
+            float(coords[0][label_mask].sum()),
+            float(coords[1][label_mask].sum()),
+            float(coords[2][label_mask].sum()),
+        ]
+
+    return block_index, block_accumulator
+
+
 def _blockwise_region_props(labels_zarr, image_zarr, dapi_zarr,
                              labels_prefix, image_prefix, dapi_prefix,
-                             blocksize, bleed_params):
-    """Accumulate per-label sum_intensity and pixel_count over spatial blocks.
+                             blocksize, bleed_params,
+                             dask_client,
+                             mask=None, roi=None):
+    """Accumulate per-label sum_intensity and pixel_count over spatial blocks
+    using dask distributed processing.
 
     Parameters
     ----------
@@ -251,62 +347,115 @@ def _blockwise_region_props(labels_zarr, image_zarr, dapi_zarr,
     labels_prefix, image_prefix, dapi_prefix : list[int]
     blocksize : np.ndarray  (Z, Y, X)
     bleed_params : tuple(bg_img, bg_dapi, lo, dapi_factor) or None
+    dask_client : dask distributed Client
+    mask : array-like or None
+        Foreground mask. Blocks with no foreground are skipped.
+    roi : array-like or None
+        Region of interest as [z0, y0, x0, z1, y1, x1]. Blocks outside the ROI are skipped.
+
     Returns
     -------
     dict[int, [float, int]]
-        label_id -> [sum_intensity, pixel_count]
+        label_id -> [sum_intensity, pixel_count, sum_z, sum_y, sum_x]
     """
     spatial_shape = np.array(labels_zarr.shape[-3:])
     nblocks = np.ceil(spatial_shape / blocksize).astype(int)
     logger.info(f'Split {spatial_shape} labels image into {nblocks} blocks of size {blocksize}')
 
-    accumulator = {}
+    # precompute mask ratio and stride
+    if mask is not None:
+        mask_ratio = np.array(mask.shape) / spatial_shape
+        mask_stride = np.round(blocksize * mask_ratio).astype(int)
 
+    # precompute ROI bounds
+    if roi is not None:
+        roi = np.asarray(roi)
+        roi_start = roi[:3]
+        roi_stop = roi[3:]
+
+    # build block parameters, skipping blocks outside mask/ROI
+    block_indices = []
+    starts = []
+    stops = []
+    total_blocks = 0
     for block_index in np.ndindex(*nblocks):
+        total_blocks += 1
         start = blocksize * np.array(block_index)
         stop = np.minimum(spatial_shape, start + blocksize)
-        spatial_slices = [slice(int(s), int(e)) for s, e in zip(start, stop)]
-        labels_coords = tuple(labels_prefix + spatial_slices)
-        image_coords = tuple(image_prefix + spatial_slices)
-        logger.info(f'Reading block {block_index} / {tuple(nblocks)}: {labels_coords}')
 
-        labels_block = labels_zarr[labels_coords]
-        image_block = image_zarr[image_coords]
+        # skip blocks with no foreground in the mask
+        if mask is not None:
+            mo = (mask_stride * np.array(block_index)).astype(int)
+            mask_slice = tuple(slice(x, x + y) for x, y in zip(mo, mask_stride))
+            if not np.any(mask[mask_slice]):
+                continue
 
-        if bleed_params is not None:
-            bg_img, bg_dapi, _, dapi_factor = bleed_params
-            dapi_block = dapi_zarr[tuple(dapi_prefix + spatial_slices)].astype('float32')
-            image_block = np.maximum(
-                0, image_block.astype('float32') - bg_img - dapi_factor * (dapi_block - bg_dapi)
-            )
+        # skip blocks that don't overlap with the ROI
+        if roi is not None:
+            if not (np.all(start < roi_stop) and np.all(stop > roi_start)):
+                continue
 
-        unique_labels = np.unique(labels_block)
-        unique_labels = unique_labels[unique_labels != 0]
-        logger.info(f'Block {block_index} ({labels_block.shape}) found {len(unique_labels)} labels')
+        block_indices.append(block_index)
+        starts.append(start)
+        stops.append(stop)
 
-        # Build coordinate grids offset by block start position (ZYX)
-        block_shape = labels_block.shape
-        coords = np.mgrid[
-            start[0]:start[0]+block_shape[0],
-            start[1]:start[1]+block_shape[1],
-            start[2]:start[2]+block_shape[2],
-        ]  # shape (3, Z, Y, X)
+    logger.info(f'Submitting {len(block_indices)} block tasks to dask (skipped {total_blocks - len(block_indices)} out of {total_blocks})')
 
-        for label in unique_labels:
-            mask = labels_block == label
+    process_block_fn = functools.partial(
+        _process_region_props_block,
+        labels_prefix=labels_prefix,
+        image_prefix=image_prefix,
+        dapi_prefix=dapi_prefix,
+        bleed_params=bleed_params,
+        labels_zarr=labels_zarr,
+        image_zarr=image_zarr,
+        dapi_zarr=dapi_zarr,
+    )
+
+    tasks = dask_client.map(process_block_fn, block_indices, starts, stops)
+
+    logger.info(f'Start collecting results from {len(tasks)} submitted tasks')
+
+    accumulator = {}
+    completed = 0
+    for future, result in as_completed(tasks, with_results=True):
+        if future.cancelled():
+            continue
+        block_index, block_accumulator = result
+        completed += 1
+
+        # merge block accumulator into the global accumulator
+        for label, values in block_accumulator.items():
             if label not in accumulator:
-                # [sum_intensity, pixel_count, sum_z, sum_y, sum_x]
                 accumulator[label] = [0.0, 0, 0.0, 0.0, 0.0]
-            accumulator[label][0] += image_block[mask].astype('float32').sum()
-            accumulator[label][1] += mask.sum()
-            accumulator[label][2] += coords[0][mask].sum()
-            accumulator[label][3] += coords[1][mask].sum()
-            accumulator[label][4] += coords[2][mask].sum()
+            accumulator[label][0] += values[0]
+            accumulator[label][1] += values[1]
+            accumulator[label][2] += values[2]
+            accumulator[label][3] += values[3]
+            accumulator[label][4] += values[4]
+
+        if completed % 500 == 0:
+            logger.info(f'Completed {completed} blocks so far out of {len(tasks)}')
+
+    logger.info(f'Completed all {completed} blocks')
 
     return accumulator
 
 
 def _extract_spots_region_properties(args):
+    load_dask_config(args.dask_config)
+
+    if args.dask_scheduler:
+        cluster_client = Client(address=args.dask_scheduler)
+    else:
+        cluster_client = Client(LocalCluster(n_workers=args.local_dask_workers,
+                                             threads_per_worker=args.worker_cpus))
+
+    worker_config = ConfigureWorkerPlugin(args.logging_config,
+                                          args.verbose,
+                                          worker_cpus=args.worker_cpus)
+    cluster_client.register_plugin(worker_config, name='WorkerConfig')
+
     image_attrs = read_array_attrs(args.image_container, args.image_dataset)
     image_zarr = open_array(args.image_container, args.image_dataset)
     logger.info(f'Opened {image_zarr.shape} image {args.image_container}:{args.image_dataset}')
@@ -328,6 +477,22 @@ def _extract_spots_region_properties(args):
     spatial_shape = np.array(labels_zarr.shape[-3:])
     blocksize = (np.array(args.processing_blocksize[::-1])
                  if args.processing_blocksize else spatial_shape)
+
+    # load foreground mask
+    if args.mask and Path(args.mask).exists():
+        logger.info(f'Read foreground mask from {args.mask}:{args.mask_subpath}')
+        mask = open_array(args.mask, args.mask_subpath)
+    else:
+        mask = None
+
+    # convert ROI from CLI xyz order to internal zyx order: [x0,y0,z0,x1,y1,z1] -> [z0,y0,x0,z1,y1,x1]
+    if args.roi is not None:
+        r = args.roi
+        if len(r) != 6:
+            raise ValueError(f'ROI ({args.roi}) expected to have 6 values xmin,ymin,zmin,xmax,ymax,zmax')
+        roi = np.array([r[2], r[1], r[0], r[5], r[4], r[3]])
+    else:
+        roi = None
 
     labels_prefix = _build_timeindex_prefix(labels_zarr, args.labels_timeindex, args.labels_channel)
     image_prefix = _build_timeindex_prefix(image_zarr, args.image_timeindex, args.image_channel)
@@ -359,6 +524,9 @@ def _extract_spots_region_properties(args):
         labels_zarr, image_zarr, dapi_zarr,
         labels_prefix, image_prefix, dapi_prefix,
         blocksize, bleed_params,
+        cluster_client,
+        mask=mask,
+        roi=roi,
     )
 
     voxel_volume = np.prod(voxel_spacing)
