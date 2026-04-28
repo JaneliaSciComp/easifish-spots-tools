@@ -210,6 +210,10 @@ def _get_spots_counts(args):
         # round the zyx coordinates to the nearest int
         spots_per_file[f] = np.round(spots_zyx).astype(np.uint32)
 
+    if not spots_per_file:
+        logger.warning('No spot files found; nothing to process.')
+        return
+
     # load foreground mask
     if args.mask and Path(args.mask).exists():
         logger.info(f'Read foreground mask from {args.mask}:{args.mask_subpath}')
