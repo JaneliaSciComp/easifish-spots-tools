@@ -38,11 +38,11 @@ def distributed_spot_detection(
     psf_trim=0,
 ):
     # set white_tophat defaults
-    if 'radius' not in white_tophat_args:
+    if white_tophat_args is not None and 'radius' not in white_tophat_args:
         white_tophat_args['radius'] = 4
 
     # set psf estimation defaults
-    if 'radius' not in psf_estimation_args:
+    if psf_estimation_args is not None and 'radius' not in psf_estimation_args:
         psf_estimation_args['radius'] = 9
 
     # set spot detection defaults
@@ -52,14 +52,13 @@ def distributed_spot_detection(
         spot_detection_args['max_radius'] = 6
 
     # compute overlap depth
-    all_radii = [white_tophat_args['radius'],
-                 psf_estimation_args['radius'],
-                 spot_detection_args['max_radius'],]
+    all_radii = []
+    if white_tophat_args is not None:
+        all_radii.append(white_tophat_args['radius'])
+    if psf_estimation_args is not None:
+        all_radii.append(psf_estimation_args['radius'])
+    all_radii.append(spot_detection_args['max_radius'])
     overlap = int(2*max(np.max(x) for x in all_radii))
-
-    # don't detect spots in the overlap region
-    if 'exclude_border' not in spot_detection_args:
-        spot_detection_args['exclude_border'] = overlap
 
     spatial_shape = image_data.shape[-3:]
     nspatial_dims = len(spatial_shape)
@@ -242,7 +241,10 @@ def _detect_block_spots(block_index, core_coords, overlap_coords, psf,
     logger.info(f'Detect spots for block {block_index} at {core_coords} ({overlap_coords}) of size {block.shape}')
 
     # load data, background subtract, deconvolve, detect blobs
-    wth_filtered_block = fs_filter.white_tophat(block, **white_tophat_args)
+    if white_tophat_args is not None:
+        wth_filtered_block = fs_filter.white_tophat(block, **white_tophat_args)
+    else:
+        wth_filtered_block = block
 
     # optional smoothing, Note: should only be with extremely small sigmas
     if gaussian_sigma is not None:
@@ -264,7 +266,7 @@ def _detect_block_spots(block_index, core_coords, overlap_coords, psf,
             else:
                 break
 
-    if psf is not None:
+    if psf is not None and deconvolution_args is not None:
         if psf_trim > 0:
             # trim the PSF
             trimmed_psf = psf[psf_trim:-psf_trim,
