@@ -12,6 +12,7 @@ from glob import glob
 from zarr_tools.ngff.ngff_utils import get_spatial_dataset_voxel_spacing
 
 from pathlib import Path
+from typing import List
 
 from .cli import floattuple, inttuple
 from .io_utils.read_utils import open_array, read_array_attrs
@@ -191,26 +192,7 @@ def _get_spots_counts(args):
 
     fx = sorted(glob(args.spots_pattern))
 
-    spots_per_file = {}
-    for f in fx:
-        logger.info(f'Reading {f}')
-        r = os.path.basename(f).split('/')[-1]
-        r = r.split('.')[0]
-        df = pd.read_csv(f, header='infer')
-        if df.columns.dtype == object:
-            # file has a text header — column names are strings
-            spots = df.values
-        else:
-            # no header — first row was data, re-read without header
-            spots = pd.read_csv(f, header=None).values
-
-        # Convert from micrometer space to the voxel space of the segmented image
-        # CSV columns are x,y,z — convert to z,y,x and scale to voxel space
-        spots_zyx = spots[:, :3][:, ::-1] / labels_voxel_spacing
-        # round the zyx coordinates to the nearest int
-        spots_per_file[f] = np.round(spots_zyx).astype(np.uint32)
-
-    if not spots_per_file:
+    if not fx:
         logger.warning('No spot files found; nothing to process.')
         return
 
@@ -240,7 +222,7 @@ def _get_spots_counts(args):
         args.labels_timeindex,
         args.labels_channel,
         processing_blocksize,
-        spots_per_file,
+        fx,
         labels_voxel_spacing,
         spot_counts,
         labeled_spots,
@@ -269,8 +251,8 @@ def _get_spots_counts(args):
 def _process_block(block_index,
                    start, stop,
                    timeindex_and_channel=[],
-                   spots_files={},
-                   voxel_spacing=[],
+                   spots_files=[],
+                   spots_spacing=[],
                    labels_zarr=np.empty(0)):
     """Process a single block of labels and count spots per label.
 
@@ -297,25 +279,28 @@ def _process_block(block_index,
     block_counts = {}  # {file_stem: {label_id: count}}
     block_labeled_spots = []
 
-    for f, spots_zyx in spots_files.items():
-        r = os.path.splitext(os.path.basename(f))[0]
-        logger.info(f'Process spots from {r} for block {block_index} at {block_coords}')
+    for f in spots_files:
+        spots_fn = os.path.splitext(os.path.basename(f))[0]
+        logger.info(f'Process spots from {spots_fn} for block {block_index} at {block_coords}')
+        spots_zyx = _read_spots_coords_from_file(f)
+
+        spots_voxels = np.round(spots_zyx / spots_spacing).astype(np.uint32)
 
         # filter spots that fall within this block's [start, stop) range
-        in_block = np.all((spots_zyx >= start) & (spots_zyx < stop), axis=1)
-        block_spots_zyx = spots_zyx[in_block]
-        logger.info(f'Block {block_index} file {r}: {len(block_spots_zyx)} spots')
+        in_block = np.all((spots_voxels >= start) & (spots_voxels < stop), axis=1)
+        block_spots = spots_voxels[in_block] # block spots (z,y,x) voxel coords 
+        logger.info(f'Block {block_index} file {spots_fn}: {len(block_spots)} spots')
 
         file_counts = {}
 
-        for spot_zyx in block_spots_zyx:
-            if np.any(np.isnan(spot_zyx)):
+        for spot_coords in block_spots:
+            if np.any(np.isnan(spot_coords)):
                 continue
-            local_idx = spot_zyx - start
+            local_idx = spot_coords - start
             if np.any(local_idx < 0) or np.any(local_idx > spatial_block_shape):
                 logger.warning((
                     f'Block {block_index} at {block_coords} '
-                    f'unexpected out of bounds for {spot_zyx} ({spot_zyx * voxel_spacing}) -> {local_idx} '
+                    f'unexpected out of bounds for {spot_coords} ({spot_coords * spots_spacing}) -> {local_idx} '
                 ))
                 continue
             label_coords = (tuple(local_idx)
@@ -323,23 +308,23 @@ def _process_block(block_index,
                             else (0,) * (len(block_labels.shape) - len(local_idx)) + tuple(local_idx))
             try:
                 label = int(block_labels[label_coords])
-                spot_physical_zyx = spot_zyx * voxel_spacing
+                spot_physical_coords = spot_coords * spots_spacing # spot physical z,y,x coordinates 
                 block_labeled_spots.append({
                     'label': label,
-                    'x': spot_physical_zyx[2],
-                    'y': spot_physical_zyx[1],
-                    'z': spot_physical_zyx[0],
-                    'vx': spot_zyx[2],
-                    'vy': spot_zyx[1],
-                    'vz': spot_zyx[0],
-                    'file': r,
+                    'x': spot_physical_coords[2],
+                    'y': spot_physical_coords[1],
+                    'z': spot_physical_coords[0],
+                    'vx': spot_coords[2],
+                    'vy': spot_coords[1],
+                    'vz': spot_coords[0],
+                    'file': spots_fn,
                 })
                 if label > 0:
                     file_counts[label] = file_counts.get(label, 0) + 1
             except Exception as e:
-                logger.exception(f'Error looking up label at {spot_zyx} ({label_coords}): {e}')
+                logger.exception(f'Error looking up label at {spot_coords} ({label_coords}): {e}')
 
-        block_counts[r] = file_counts
+        block_counts[spots_fn] = file_counts
 
     logger.info(f'Completed block {block_index}')
     return block_index, block_counts, block_labeled_spots
@@ -349,8 +334,8 @@ def _blockwise_spot_count(labels_zarr:zarr.Array,
                           timeindex:int|None,
                           labels_channel:int|None,
                           blocksize,
-                          spots_files, # mapping of file -> ndarray[int]
-                          voxel_spacing,
+                          spots_files:List[str],
+                          spots_spacing,
                           counts,
                           labeled_spots,
                           dask_client:Client,
@@ -436,7 +421,7 @@ def _blockwise_spot_count(labels_zarr:zarr.Array,
         _process_block,
         timeindex_and_channel=timeindex_and_channel,
         spots_files=spots_files,
-        voxel_spacing=voxel_spacing,
+        spots_spacing=spots_spacing,
         labels_zarr=labels_zarr,
     )
 
@@ -485,6 +470,20 @@ def _main():
 
     # run post processing
     _get_spots_counts(args)
+
+
+def _read_spots_coords_from_file(f):
+    logger.info(f'Reading {f}')
+
+    df = pd.read_csv(f, header='infer')
+    if df.columns.dtype == object:
+        # file has a text header — column names are strings
+        spots = df.values
+    else:
+        # no header — first row was data, re-read without header
+        spots = pd.read_csv(f, header=None).values
+    # CSV columns are x,y,z — convert to z,y,x and scale to voxel space
+    return spots[:, :3][:, ::-1]
 
 
 if __name__ == '__main__':
