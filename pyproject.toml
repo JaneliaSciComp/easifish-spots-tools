@@ -11,7 +11,7 @@ requires-python = ">=3.12"
 dependencies = [
     "dask==2025.11.0",
     "distributed==2025.11.0",
-    "fishspot @ git+https://github.com/GFleishman/fishspot.git@f574540",
+    "fishspot @ git+https://github.com/cgoina/fishspot.git@95e61fa",
     "flatten_json==0.1.14",
     "numpy>2,<3",
     "pynrrd==1.1.3",
