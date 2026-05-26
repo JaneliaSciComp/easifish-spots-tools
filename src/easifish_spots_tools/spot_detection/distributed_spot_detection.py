@@ -297,6 +297,12 @@ def _detect_block_spots(block_index, core_coords, overlap_coords, psf,
         # get an intensity threshold
         if intensity_threshold is None:
             intensity_threshold = fs_filter.maximum_deviation_threshold(original_block, winsorize=intensity_thresold_winsorize)
+
+            if intensity_threshold < 0:
+                logger.info('No spots left after filtering')
+                # no spots after filtering, ensure consistent format - z,y,x,intensity,sigma_x,sigma_y,sigma_z
+                return block_index, np.zeros((0, len(block.shape) + 6)), psf
+                
             logger.info((
                 f'Select intensity_threshold for block {block_index} as maximum between '
                 f'deviation threshold: {intensity_threshold} and intensity_threshold_minimum value {intensity_threshold_minimum}'
