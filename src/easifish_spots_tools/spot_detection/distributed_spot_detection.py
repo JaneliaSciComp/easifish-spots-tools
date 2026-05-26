@@ -112,12 +112,16 @@ def distributed_spot_detection(
 
     # determine coords for blocking
     block_indices, overlap_coords, core_coords, psfs = [], [], [], []
+    ntimepoints = 0
+    nchannels = 0
     for tp in spots_timepoints:
+        ntimepoints = ntimepoints + 1
         for ch in spots_channels:
 
             if ch in excluded_spots_channels:
                 continue
 
+            nchannels = nchannels + 1
             for (i, j, k) in product(*[range(x) for x in nblocks]):
                 # determine if block is in foreground
                 if mask is not None:
@@ -160,7 +164,10 @@ def distributed_spot_detection(
                 overlap_coords.append(tuple(extended_coords))
                 psfs.append(psf)
 
-    logger.info(f'Partition a {spatial_shape} volume into {len(core_coords)} foreground blocks out of {nblocks} for spot detection with blocksize {blocksize}')
+    logger.info((
+        f'Partition a {spatial_shape} volume into {len(core_coords)} foreground blocks out of {nblocks} '
+        f'for {ntimepoints} timepoints {nchannels} channels spot detection with blocksize {blocksize}'
+    ))
 
     # submit all alignments to cluster
     detect_block_spots = functools.partial(
