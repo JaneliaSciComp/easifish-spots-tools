@@ -18,7 +18,7 @@ def open_array(container_path:str, subpath:str):
     if container_type == 'tif' or container_type == 'tiff':
         logger.info(f'Open tiff {container_path} ({real_container_path})')
         return _open_tiff_array(real_container_path)
-    elif container_type == 'n5' or container_type == 'zarr':
+    elif container_type == 'n5' or container_type == 'zarr' or container_type == 'zarr2':
         logger.info(f'Open zarr {container_path}:{subpath} ({real_container_path}:{subpath}) ')
         return zarr.open_array(store=container_path, path=subpath)
     else:
@@ -34,7 +34,7 @@ def read_array_attrs(container_path:str, subpath:str) -> dict:
     if array_type == 'tif' or array_type == 'tiff':
         logger.info(f'Open tiff {container_path} ({real_container_path})')
         return _read_tiff_attrs(container_path)
-    elif array_type == 'n5' or array_type == 'zarr':
+    elif array_type == 'n5' or array_type == 'zarr' or array_type == 'zarr2':
         logger.info(f'Open {container_path}:{subpath} ({real_container_path}):{subpath}')
         _, zattrs = open_zarr_store(container_path, subpath)
         return zattrs
