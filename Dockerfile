@@ -1,4 +1,4 @@
-FROM ghcr.io/janeliascicomp/dask:2025.11.0-py12-ol9
+FROM ghcr.io/janeliascicomp/dask:2026.6.0-py12-ol9
 ARG SPOTS_TOOLS_BRANCH=main
 ARG SPOTS_TOOLS_COMMIT=839a645
 

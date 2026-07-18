@@ -31,6 +31,7 @@ def distributed_spot_detection(
     intensity_threshold=None,
     intensity_threshold_minimum=0,
     intensity_thresold_winsorize=(1,99),
+    intensity_threshold_steps=1000,
     mask=None,
     roi=None,
     psf=None,
@@ -180,6 +181,7 @@ def distributed_spot_detection(
         intensity_threshold=intensity_threshold,
         intensity_threshold_minimum=intensity_threshold_minimum,
         intensity_thresold_winsorize=intensity_thresold_winsorize,
+        intensity_threshold_steps=intensity_threshold_steps,
         psf_retries=psf_retries,
         psf_trim=psf_trim,
         array=image_data
@@ -226,6 +228,7 @@ def _detect_block_spots(block_index, core_coords, overlap_coords, psf,
                         spot_detection_args={},
                         gaussian_sigma=None,
                         intensity_threshold=None,
+                        intensity_threshold_steps=1000,
                         intensity_threshold_minimum=0,
                         intensity_thresold_winsorize=(1, 99),
                         psf_retries=3,
@@ -303,7 +306,8 @@ def _detect_block_spots(block_index, core_coords, overlap_coords, psf,
 
         # get an intensity threshold
         if intensity_threshold is None:
-            intensity_threshold = fs_filter.maximum_deviation_threshold(original_block, winsorize=intensity_thresold_winsorize)
+            intensity_threshold = fs_filter.maximum_deviation_threshold(original_block, winsorize=intensity_thresold_winsorize,
+                                                                        max_steps=intensity_threshold_steps)
 
             if intensity_threshold < 0:
                 logger.info('No spots left after filtering')
