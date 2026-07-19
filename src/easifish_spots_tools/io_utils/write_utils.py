@@ -51,10 +51,11 @@ def write_spots_image(voxel_spots_zyx:np.ndarray,
 
 def _write_spots_as_ome_zarr(spots_image:np.ndarray,
                              output_path:Path,
-                             dataset_subpath:str,
+                             dataset_subpath:Optional[str],
                              reference_image_attrs:dict,
                              zarr_format:int=2):
-    axes = get_spatial_axes(reference_image_attrs.get('array_axes'))
+    logger.debug(f'Extract OME axes and transforms from {reference_image_attrs}')
+    axes = get_spatial_axes(reference_image_attrs)
     image_transforms = reference_image_attrs.get('array_transforms', {})
     scale = image_transforms.get('scale')
     translation = image_transforms.get('translation')

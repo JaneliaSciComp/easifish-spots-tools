@@ -6,6 +6,8 @@ import time
 from dask.distributed import (Client, LocalCluster)
 from pathlib import Path
 
+from typing import Optional
+
 from zarr_tools.ngff.ngff_utils import get_spatial_dataset_voxel_spacing
 
 from .cli import floattuple, inttuple
@@ -292,8 +294,8 @@ def _generate_spots_image(spots_zyx:np.ndarray,
                           image_shape:tuple,
                           reference_voxel_spacing:np.ndarray,
                           output_path: Path,
-                          spots_dataset_reference:str=None,
-                          reference_image_attrs:dict=None):
+                          spots_dataset_reference:Optional[str],
+                          reference_image_attrs:Optional[dict]):
     spatial_shape = image_shape[-3:]
     channels = np.unique(spots_zyx[:, 4].astype(int))
 
