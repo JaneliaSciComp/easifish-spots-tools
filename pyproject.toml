@@ -21,7 +21,7 @@ dependencies = [
     "SimpleITK==2.5.3",
     "tornado",
     "zarr>3,<4",
-    "zarr-tools @ git+https://github.com/JaneliaSciComp/zarr-tools.git@1ad0a43",
+    "zarr-tools @ git+https://github.com/JaneliaSciComp/zarr-tools.git@bc64a32",
 ]
 
 [tool.setuptools.packages.find]
