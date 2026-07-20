@@ -6,7 +6,7 @@ from pathlib import Path
 
 from typing import Optional
 
-from zarr_tools.ngff.ngff_utils import create_ome_metadata, get_spatial_axes
+from zarr_tools.ngff.ngff_utils import create_ome_metadata, get_axes
 from zarr_tools.io.zarr_io import create_zarr_array
 
 
@@ -55,7 +55,7 @@ def _write_spots_as_ome_zarr(spots_image:np.ndarray,
                              reference_image_attrs:dict,
                              zarr_format:int=2):
     logger.debug(f'Extract OME axes and transforms from {reference_image_attrs}')
-    axes = get_spatial_axes(reference_image_attrs)
+    axes = get_axes(reference_image_attrs)
     image_transforms = reference_image_attrs.get('array_transforms', {})
     scale = image_transforms.get('scale')
     translation = image_transforms.get('translation')

@@ -300,19 +300,15 @@ def _generate_spots_image(spots_zyx:np.ndarray,
     channels = np.unique(spots_zyx[:, 4].astype(int))
 
     logger.info((
-        f'Resample detected spots from source image with a shape {spatial_shape} ({image_shape}) '
+        f'Resample detected spots from {channels} channels; '
+        f'image shape {spatial_shape} ({image_shape}) '
         f'and spacing {input_voxel_spacing} to spacing {reference_voxel_spacing} '
     ))
     for channel in channels:
         channel_spots = spots_zyx[spots_zyx[:, 4].astype(int) == channel]
         # convert from input voxel coords -> physical -> reference voxel indices
         voxel_coords = (channel_spots[:, :3] * input_voxel_spacing / reference_voxel_spacing)
-
-        if len(channels) > 1:
-            out_file = output_path.with_name(f'{output_path.stem}_ch{channel}{output_path.suffix}')
-        else:
-            out_file = output_path
-
+        out_file = output_path.with_name(f'{output_path.stem}_ch{channel}{output_path.suffix}')
         logger.info(f'Writing spots image for channel {channel} ({len(channel_spots)} spots) to {out_file}')
 
         write_spots_image(
