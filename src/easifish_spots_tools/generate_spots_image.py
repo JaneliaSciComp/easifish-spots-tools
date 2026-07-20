@@ -44,6 +44,17 @@ def _define_args():
                              required=True,
                              help='Spots image voxel spacing')
 
+    args_parser.add_argument('--spots-file-has-voxel-coords',
+                             dest='spots_in_voxels',
+                             action='store_true',
+                             help='If set the spots read from the source file are in voxel coords')
+
+    args_parser.add_argument('--spots-channel-colindex',
+                             dest='spots_ch_colindex',
+                             type=int,
+                             default=-1,
+                             help='Spots channel column index')
+
     args_parser.add_argument('--spots-output-image',
                              dest='spots_output_image',
                              type=str,
@@ -102,17 +113,43 @@ def _main():
     logger.info((
         f'Resample spots at {args.spots_source_subpath} from {spots_source_image_shape} image with spacing {voxel_spacing} '
         f'to {spots_dataset_reference} with shape {spots_image_shape} and spacing {spots_reference_voxel_spacing}'))
-    spots_zyx = spots_xyz[:, :3][:, ::-1] / spots_reference_voxel_spacing * args.expansion
+    if args.spots_in_voxels:
+        spots_zyx = spots_xyz[:, :3][:, ::-1] * voxel_spacing / spots_reference_voxel_spacing
+        if args.spots_ch_colindex >= 0:
+            spots_channel = spots_xyz[:, args.spots_ch_colindex:args.spots_ch_colindex+1]
+            # spots_zyx columns will be:
+            # x,y,z,ch
+            spots_zyx = np.hstack((spots_zyx, spots_channel))
+            channels = np.unique(spots_channel.astype(int))
+        else:
+            channels = None
+    else:
+        channels = None
+        spots_zyx = spots_xyz[:, :3][:, ::-1] / spots_reference_voxel_spacing * args.expansion
 
-    output_spots_image = Path(args.spots_output_image)
+    output_spots_imagefile = Path(args.spots_output_image)
 
-    write_spots_image(
-        spots_zyx,
-        spots_image_shape,
-        output_spots_image,
-        spots_dataset_reference=spots_dataset_reference,
-        reference_image_attrs=spots_reference_image_attrs,
-    )
+    if channels is not None:
+        for channel in channels:
+            # x,y,z,ch
+            channel_spots = spots_zyx[spots_zyx[:, 3].astype(int) == channel]
+            out_ch_file = output_spots_imagefile.with_name(f'{output_spots_imagefile.stem}_ch{channel}{output_spots_imagefile.suffix}')
+            write_spots_image(
+                channel_spots,
+                spots_image_shape,
+                out_ch_file,
+                spots_dataset_reference=spots_dataset_reference,
+                reference_image_attrs=spots_reference_image_attrs,
+            )
+
+    else:
+        write_spots_image(
+            spots_zyx,
+            spots_image_shape,
+            output_spots_imagefile,
+            spots_dataset_reference=spots_dataset_reference,
+            reference_image_attrs=spots_reference_image_attrs,
+        )
 
 
 def _read_spots(spots_file):
