@@ -296,6 +296,7 @@ def _detect_block_spots(block_index, core_coords, overlap_coords, psf,
 
     if spots.shape[0] == 0:
         # if no spots are found, ensure consistent format - z,y,x,intensity,sigma_x,sigma_y,sigma_z
+        logger.info(f'Block {block_index} at {core_coords} ({overlap_coords}) finished -> found no spots')
         return block_index, np.zeros((0, len(block.shape) + 6)), psf
     else:
         # remove spots found in the overlap region
