@@ -292,7 +292,7 @@ def _detect_block_spots(block_index, core_coords, overlap_coords, psf,
 
     # final spot detection
     spots = fs_detect.detect_spots_log(decon, **spot_detection_args)
-    logger.info(f'Spots detected using {spot_detection_args}: {spots.shape}')
+    logger.info(f'{block_index} spots detected using {spot_detection_args}: {spots.shape}')
 
     if spots.shape[0] == 0:
         # if no spots are found, ensure consistent format - z,y,x,intensity,sigma_x,sigma_y,sigma_z
@@ -303,7 +303,7 @@ def _detect_block_spots(block_index, core_coords, overlap_coords, psf,
         core_origin = [x.start-y.start for x, y in zip(core_coords[-3:], overlap_coords[-3:])]
         span = [x.stop-x.start for x in core_coords[-3:]]
         spots = fs_filter.filter_by_range(spots, core_origin, span)
-        logger.info(f'Spots array shape after overlap removal of overlap {overlap_coords} from {core_coords}: {spots.shape}')
+        logger.info(f'{block_index} spots array shape after overlap removal of overlap {overlap_coords} from {core_coords}: {spots.shape}')
 
         # get an intensity threshold
         if intensity_threshold is None:
@@ -311,7 +311,7 @@ def _detect_block_spots(block_index, core_coords, overlap_coords, psf,
                                                                         max_steps=intensity_threshold_steps)
 
             if intensity_threshold < 0:
-                logger.info('No spots left after filtering')
+                logger.info(f'No spots left after filtering for block {block_index}')
                 # no spots after filtering, ensure consistent format - z,y,x,intensity,sigma_x,sigma_y,sigma_z
                 return block_index, np.zeros((0, len(block.shape) + 6)), psf
                 
@@ -336,7 +336,7 @@ def _detect_block_spots(block_index, core_coords, overlap_coords, psf,
                                 intensities[..., None],
                                 spots[:,3:]), axis=1)
         # filter by intensity (intensity_dim == 5)
-        logger.info(f'Filter out spots with a value <= {intensity_threshold}')
+        logger.info(f'{block_index} filter out spots with a value <= {intensity_threshold}')
         spots = spots[ spots[..., 5] > intensity_threshold ]
 
         # adjust for block origin
