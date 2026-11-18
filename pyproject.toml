@@ -18,10 +18,9 @@ dependencies = [
     "ome-zarr-models==1.7",
     "pydantic==2.12.4",
     "pyyaml",
-    "SimpleITK==2.5.3",
     "tornado",
     "zarr>3,<4",
-    "zarr-tools @ git+https://github.com/JaneliaSciComp/zarr-tools.git@525e55a",
+    "zarr-tools @ git+https://github.com/JaneliaSciComp/zarr-tools.git@5c58014",
 ]
 
 [tool.setuptools.packages.find]
