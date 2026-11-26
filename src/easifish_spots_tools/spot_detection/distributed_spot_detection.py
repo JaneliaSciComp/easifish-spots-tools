@@ -308,7 +308,7 @@ def _detect_block_spots(block_index, core_coords, overlap_coords, psf,
         # get an intensity threshold
         if intensity_threshold is None:
             intensity_threshold = fs_filter.maximum_deviation_threshold(original_block, winsorize=intensity_thresold_winsorize,
-                                                                        max_steps=intensity_threshold_steps)
+                                                                        max_iterations=intensity_threshold_steps)
 
             if intensity_threshold < 0:
                 logger.info(f'No spots left after filtering for block {block_index}')
