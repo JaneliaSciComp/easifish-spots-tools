@@ -9,6 +9,7 @@ description = "EASI-FISH pipeline tools for detecting or processing spots "
 license = "BSD-3-Clause"
 requires-python = ">=3.12"
 dependencies = [
+    "bokeh>=3.1",
     "dask==2026.6.0",
     "distributed==2026.6.0",
     "fishspot @ git+https://github.com/cgoina/fishspot.git@6e482ee",
