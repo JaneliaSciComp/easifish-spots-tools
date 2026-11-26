@@ -1,4 +1,4 @@
-ARG GIT_HASH=a949f19
+ARG GIT_HASH=13bfe1b
 
 FROM ghcr.io/janeliascicomp/dask:2026.6.0-py12-ol9 AS builder
 
