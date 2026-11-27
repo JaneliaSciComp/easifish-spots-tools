@@ -129,6 +129,9 @@ def distributed_spot_detection(
                     mo = stride * (i, j, k)
                     mask_slice = tuple(slice(x, x+y) for x, y in zip(mo, stride))
                     if not np.any(mask[mask_slice]):
+                        if nchannels == 1:
+                            # only log the skipped blocks once
+                            logger.debug(f'Skip block ({i},{j},{k})')
                         continue
 
                 # skip blocks that don't overlap with the ROI
@@ -136,6 +139,9 @@ def distributed_spot_detection(
                     block_start = np.array(blocksize) * (i, j, k)
                     block_stop = np.minimum(spatial_shape, block_start + blocksize)
                     if not (np.all(block_start < roi_stop) and np.all(block_stop >= roi_start)):
+                        if nchannels == 1:
+                            # only log the skipped blocks once
+                            logger.debug(f'Skip block ({i},{j},{k})')
                         continue
 
                 # create overlap coords and append to list
